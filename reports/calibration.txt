@@ -1,0 +1,18 @@
+Window rect   : (-7, -7, 1543, 823)
+Client rect   : (0, 0, 1536, 792)
+Client origin : (0, 23)
+
+Screen coords for sidebar clicks (x=112, various y):
+  client_y=100  ->  screen(112, 123)
+  client_y=150  ->  screen(112, 173)
+  client_y=200  ->  screen(112, 223)
+  client_y=250  ->  screen(112, 273)
+  client_y=300  ->  screen(112, 323)
+  client_y=350  ->  screen(112, 373)
+  client_y=400  ->  screen(112, 423)
+  client_y=450  ->  screen(112, 473)
+  client_y=500  ->  screen(112, 523)
+  client_y=550  ->  screen(112, 573)
+  client_y=600  ->  screen(112, 623)
+  client_y=650  ->  screen(112, 673)
+  client_y=700  ->  screen(112, 723)

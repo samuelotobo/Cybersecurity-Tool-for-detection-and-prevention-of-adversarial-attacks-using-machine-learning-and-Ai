@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0f1e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Security Monitor</title>
+  <style>
+    :root {
+      --bg:      #07091a;
+      --surface: #111525;
+      --surface2:#0c1020;
+      --border:  #1c2440;
+      --text:    #dde6f0;
+      --muted:   #667799;
+      --accent:  #3b82f6;
+      --crit:    #ef4444;
+      --high:    #f97316;
+      --med:     #eab308;
+      --low:     #3b82f6;
+      --green:   #22c55e;
+      --purple:  #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100dvh; display: flex; flex-direction: column;
+    }
+
+    /* ── Nav ── */
+    nav {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 12px 16px; display: flex; align-items: center; gap: 10px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    nav .logo { font-size: 17px; font-weight: 700; color: var(--accent); flex: 1; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .3s; }
+    .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    #status-text { font-size: 11px; color: var(--muted); }
+    #login-btn  { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    #logout-btn { background: #374151; color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; display: none; }
+
+    /* ── Login ── */
+    #login-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .login-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      padding: 32px 28px; width: 100%; max-width: 360px;
+    }
+    .login-card h2 { font-size: 20px; margin-bottom: 6px; }
+    .login-card p { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+    .field input {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 10px 12px; border-radius: 8px; font-size: 14px;
+    }
+    .field input:focus { outline: none; border-color: var(--accent); }
+    .login-submit {
+      width: 100%; background: var(--accent); color: #fff; border: none;
+      padding: 12px; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px;
+    }
+    .login-submit:hover { background: #2563eb; }
+    .login-error { color: var(--crit); font-size: 13px; margin-top: 10px; display: none; }
+
+    /* ── Dashboard ── */
+    #dashboard { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+
+    .stats-row {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 14px 14px 0;
+    }
+    @media(min-width:600px){ .stats-row { grid-template-columns: repeat(4,1fr); } }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+    }
+    .stat-card .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .stat-card.crit .value { color: var(--crit); }
+    .stat-card.high .value { color: var(--high); }
+    .stat-card.norm .value { color: var(--accent); }
+    .stat-card.conn .value { color: var(--green); font-size: 20px; }
+
+    /* Filter chips */
+    .filter-bar {
+      display: flex; gap: 7px; padding: 12px 14px; overflow-x: auto; scrollbar-width: none;
+    }
+    .filter-bar::-webkit-scrollbar { display: none; }
+    .chip {
+      flex-shrink: 0; padding: 5px 13px; border-radius: 20px; font-size: 11px;
+      font-weight: 600; border: 1px solid var(--border); background: transparent;
+      color: var(--muted); cursor: pointer; white-space: nowrap; transition: all .15s;
+    }
+    .chip.active        { background: var(--accent);  color: #fff; border-color: var(--accent); }
+    .chip.crit.active   { background: var(--crit);    color: #fff; border-color: var(--crit); }
+    .chip.high.active   { background: var(--high);    color: #fff; border-color: var(--high); }
+    .chip.med.active    { background: var(--med);     color: #111; border-color: var(--med); }
+    .chip.low2.active   { background: var(--low);     color: #fff; border-color: var(--low); }
+
+    /* Alert list */
+    #alert-list { flex: 1; overflow-y: auto; padding: 0 14px 90px; }
+    #alert-list::-webkit-scrollbar { width: 4px; }
+    #alert-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Alert card ── */
+    .alert-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-left: 4px solid var(--border); border-radius: 12px;
+      margin-bottom: 10px; overflow: hidden;
+      animation: fadeIn .2s ease;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:none; } }
+    .alert-card.crit { border-left-color: var(--crit); }
+    .alert-card.high { border-left-color: var(--high); }
+    .alert-card.med  { border-left-color: var(--med);  }
+    .alert-card.low  { border-left-color: var(--low);  }
+
+    /* Card header — always visible */
+    .card-head {
+      padding: 14px 16px 10px; cursor: pointer; user-select: none;
+    }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .card-icon-rule { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .card-icon { font-size: 20px; flex-shrink: 0; }
+    .card-rule { font-size: 14px; font-weight: 700; line-height: 1.3; }
+    .badge {
+      flex-shrink: 0; font-size: 9px; font-weight: 800; padding: 3px 8px;
+      border-radius: 10px; text-transform: uppercase; letter-spacing: .6px;
+    }
+    .badge.crit { background: rgba(239,68,68,.18);  color: var(--crit); }
+    .badge.high { background: rgba(249,115,22,.18); color: var(--high); }
+    .badge.med  { background: rgba(234,179,8,.18);  color: var(--med);  }
+    .badge.low  { background: rgba(59,130,246,.18); color: var(--low);  }
+
+    /* Risk tags */
+    .risk-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .risk-tag {
+      font-size: 10px; font-weight: 600; padding: 2px 9px; border-radius: 8px;
+      border: 1px solid;
+    }
+    .risk-tag.spy    { color: var(--purple); border-color: rgba(168,85,247,.35); background: rgba(168,85,247,.1); }
+    .risk-tag.attack { color: var(--crit);   border-color: rgba(239,68,68,.35);  background: rgba(239,68,68,.1); }
+    .risk-tag.data   { color: var(--high);   border-color: rgba(249,115,22,.35); background: rgba(249,115,22,.1); }
+
+    /* Packet summary strip */
+    .pkt-strip {
+      display: flex; flex-wrap: wrap; gap: 0; border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border); background: var(--surface2);
+    }
+    .pkt-cell {
+      flex: 1; min-width: 70px; padding: 7px 12px; border-right: 1px solid var(--border);
+    }
+    .pkt-cell:last-child { border-right: none; }
+    .pkt-k { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+    .pkt-v { font-size: 12px; font-weight: 600; margin-top: 2px; font-family: 'Consolas', monospace; }
+
+    /* Expandable detail */
+    .card-detail { display: none; padding: 14px 16px 16px; }
+    .card-detail.open { display: block; }
+
+    /* Section headers in detail */
+    .sec-head {
+      font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .7px; margin: 14px 0 6px; display: flex; align-items: center; gap: 6px;
+    }
+    .sec-head:first-child { margin-top: 0; }
+    .sec-head::after { content:''; flex:1; height:1px; background: var(--border); }
+
+    /* Plain-English explanation boxes */
+    .explain-box {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 12px; font-size: 13px; line-height: 1.6; color: #b0c4de;
+      margin-bottom: 8px;
+    }
+    .explain-box strong { color: var(--text); }
+
+    /* What to do steps */
+    .steps { font-size: 12px; color: #9eb3cc; line-height: 1.8; white-space: pre-line; }
+
+    /* MITRE badge */
+    .mitre-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.3);
+      border-radius: 8px; padding: 5px 10px; font-size: 11px; margin-top: 8px;
+    }
+    .mitre-badge .mid  { color: var(--accent); font-weight: 700; font-family: monospace; }
+    .mitre-badge .mname { color: #8fa3c0; }
+
+    /* Tech detail rows */
+    .detail-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 4px 0; border-bottom: 1px solid rgba(28,36,64,.6); font-size: 12px;
+    }
+    .detail-row:last-child { border-bottom: none; }
+    .dk { color: var(--muted); flex-shrink: 0; padding-right: 10px; }
+    .dv { color: var(--text); font-family: 'Consolas', monospace; word-break: break-all; text-align: right; max-width: 65%; }
+
+    /* Action buttons */
+    .btn-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .btn {
+      flex: 1; min-width: 110px; padding: 9px 12px; border-radius: 8px;
+      font-size: 12px; font-weight: 600; cursor: pointer; border: none; text-align: center;
+    }
+    .btn-block  { background: rgba(239,68,68,.15); color: var(--crit); border: 1px solid rgba(239,68,68,.35); }
+    .btn-share  { background: rgba(59,130,246,.12); color: var(--accent); border: 1px solid rgba(59,130,246,.3); }
+    .btn-copy   { background: rgba(100,116,139,.12); color: #94a3b8; border: 1px solid rgba(100,116,139,.3); }
+    .btn:hover  { opacity: .8; }
+
+    /* Expand toggle */
+    .expand-hint {
+      font-size: 10px; color: var(--muted); margin-top: 6px; padding: 0 16px 10px;
+      cursor: pointer; user-select: none; display: flex; align-items: center; gap: 4px;
+    }
+    .expand-hint .arrow { transition: transform .2s; display: inline-block; }
+    .expand-hint.open .arrow { transform: rotate(180deg); }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+
+    /* Bottom tab bar */
+    .tab-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface);
+      border-top: 1px solid var(--border); display: none;
+      justify-content: space-around; padding: 8px 0 env(safe-area-inset-bottom, 8px); z-index: 100;
+    }
+    .tab-bar.visible { display: flex; }
+    .tab-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; padding: 4px; }
+    .tab-icon { font-size: 22px; }
+    .tab-label { font-size: 10px; color: var(--muted); }
+    .tab-item.active .tab-label { color: var(--accent); }
+
+    /* Map */
+    #map-panel { flex: 1; display: none; flex-direction: column; }
+    #map-panel.visible { display: flex; }
+    #map-frame { flex: 1; border: none; background: var(--bg); }
+
+    /* Settings */
+    #settings-panel { flex: 1; display: none; flex-direction: column; padding: 16px; overflow-y: auto; gap: 8px; }
+    #settings-panel.visible { display: flex; }
+    .s-section-head { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+                       letter-spacing: .6px; margin: 12px 0 6px; }
+    .s-item {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 13px 16px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .s-label { font-size: 14px; }
+    .s-val   { font-size: 12px; color: var(--muted); font-family: monospace; word-break: break-all; text-align: right; max-width: 55%; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(14px);
+      background: #1f2937; border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 20px; font-size: 13px; white-space: nowrap;
+      opacity: 0; transition: all .25s; z-index: 999; pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <div class="logo">🛡 Security Monitor</div>
+  <div class="dot" id="status-dot"></div>
+  <div id="status-text">Offline</div>
+  <button id="login-btn"  onclick="showLogin()">Login</button>
+  <button id="logout-btn" onclick="doLogout()">Logout</button>
+</nav>
+
+<!-- Login -->
+<div id="login-panel">
+  <div class="login-card">
+    <h2>Remote Access</h2>
+    <p>Monitor your network security from any device, in real time.</p>
+    <div class="field">
+      <label>Username</label>
+      <input type="text" id="login-name" value="admin" placeholder="admin" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="login-pass" value="monitor" placeholder="••••••••" />
+    </div>
+    <button class="login-submit" onclick="doLogin()">Connect</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+  <div class="stats-row">
+    <div class="stat-card crit"><div class="label">Critical</div><div class="value" id="s-crit">–</div></div>
+    <div class="stat-card high"><div class="label">High</div><div class="value" id="s-high">–</div></div>
+    <div class="stat-card norm"><div class="label">Total</div><div class="value" id="s-total">–</div></div>
+    <div class="stat-card conn"><div class="label">Stream</div><div class="value" id="s-live">●</div></div>
+  </div>
+
+  <div class="filter-bar">
+    <button class="chip active"  onclick="setFilter('all',this)">All</button>
+    <button class="chip crit"   onclick="setFilter('critical',this)">Critical</button>
+    <button class="chip high"   onclick="setFilter('high',this)">High</button>
+    <button class="chip med"    onclick="setFilter('medium',this)">Medium</button>
+    <button class="chip low2"   onclick="setFilter('low',this)">Low</button>
+    <button class="chip"        onclick="setFilter('arp',this)">ARP</button>
+    <button class="chip"        onclick="setFilter('dns',this)">DNS</button>
+    <button class="chip"        onclick="setFilter('brute_force',this)">Brute Force</button>
+    <button class="chip"        onclick="setFilter('fim',this)">File Integrity</button>
+    <button class="chip"        onclick="setFilter('ueba',this)">Behaviour</button>
+    <button class="chip"        onclick="setFilter('tls',this)">TLS/DPI</button>
+    <button class="chip"        onclick="setFilter('event_log',this)">Event Log</button>
+    <button class="chip"        onclick="setFilter('firewall',this)">Firewall</button>
+  </div>
+
+  <div id="alert-list">
+    <div class="empty-state" id="empty-state">
+      <div class="icon">🔍</div>
+      <p>No alerts yet.<br>Live updates appear here automatically.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Map -->
+<div id="map-panel">
+  <iframe id="map-frame" src="/map" title="Network Topology Map"></iframe>
+</div>
+
+<!-- Settings -->
+<div id="settings-panel">
+  <div class="s-section-head">Connection</div>
+  <div class="s-item"><span class="s-label">Server</span><span class="s-val" id="cfg-server">–</span></div>
+  <div class="s-item"><span class="s-label">Stream</span><span class="s-val" id="cfg-sse">–</span></div>
+  <div class="s-item"><span class="s-label">Tenant</span><span class="s-val" id="cfg-tenant">–</span></div>
+
+  <div class="s-section-head">Statistics</div>
+  <div class="s-item"><span class="s-label">Alerts received</span><span class="s-val" id="cfg-count">0</span></div>
+  <div class="s-item"><span class="s-label">By category</span><span class="s-val" id="cfg-cats">–</span></div>
+
+  <div class="s-section-head">Actions</div>
+  <div class="s-item" style="cursor:pointer" onclick="clearAlerts()"><span class="s-label">Clear all alerts</span><span class="s-val">🗑</span></div>
+  <div class="s-item" style="cursor:pointer" onclick="loadAlerts()"><span class="s-label">Refresh alerts</span><span class="s-val">↻</span></div>
+  <div class="s-item" style="cursor:pointer" onclick="loadStats()"><span class="s-label">Refresh stats</span><span class="s-val">📊</span></div>
+</div>
+
+<!-- Bottom tab bar -->
+<div class="tab-bar" id="tab-bar">
+  <div class="tab-item active" onclick="showTab('alerts',this)">
+    <span class="tab-icon">🚨</span><span class="tab-label">Alerts</span>
+  </div>
+  <div class="tab-item" onclick="showTab('map',this)">
+    <span class="tab-icon">🗺</span><span class="tab-label">Map</span>
+  </div>
+  <div class="tab-item" onclick="showTab('settings',this)">
+    <span class="tab-icon">⚙</span><span class="tab-label">Settings</span>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ── Threat Context DB (mirrors utils/threat_context.py) ── -->
+<script>
+const THREAT_DB = {
+  "ARP Spoofing": {
+    icon:"🎭", cat:"Network Interception",
+    what:"A device on your network is impersonating another machine by sending false ARP messages. This lets the attacker silently intercept all traffic between two devices.",
+    why:"This is a Man-in-the-Middle attack. The attacker can read, steal or modify every packet you send — including passwords, messages and banking data — even when you think the connection is private.",
+    todo:"1. Block the attacking IP immediately.\n2. Run 'arp -a' to identify which device has this MAC.\n3. Enable Dynamic ARP Inspection (DAI) on your switch.\n4. Change passwords entered while this was active.",
+    mitre_id:"T1557.002", mitre_name:"ARP Cache Poisoning",
+    spy:true, attack:true, data:true
+  },
+  "ARP Spoofing — Gateway!": {
+    icon:"🚨", cat:"Gateway Hijack — CRITICAL",
+    what:"Your router's MAC address was just changed by another device. ALL traffic leaving your network is now passing through the attacker's machine — they can see everything.",
+    why:"Every device on your network is now sending internet traffic through the attacker. They can read passwords, steal session cookies, inject malicious content, intercept emails, and monitor all online activity.",
+    todo:"STOP ALL SENSITIVE ACTIVITY NOW:\n1. Stop banking, work logins, and email immediately.\n2. Physically disconnect the attacking device from the network.\n3. Run 'arp -d *' on all machines to clear poisoned ARP caches.\n4. Change all passwords used in the last hour.\n5. Contact your IT/security team.",
+    mitre_id:"T1557.002", mitre_name:"ARP Cache Poisoning",
+    spy:true, attack:true, data:true
+  },
+  "ARP Flood": {
+    icon:"🌊", cat:"Network Scan / DoS",
+    what:"A device is flooding the network with ARP broadcast packets — far more than any normal device generates. This can be a network scanner, malware, or the start of an attack.",
+    why:"ARP floods slow down the network, can crash switches, and are typically the first step in reconnaissance — the attacker is mapping all devices before choosing a target.",
+    todo:"1. Identify the MAC address of the flooding device.\n2. Check if it's an authorised scanner (Nmap, Nessus).\n3. If not, block the MAC on your switch.\n4. Enable ARP rate limiting on managed switches.",
+    mitre_id:"T1046", mitre_name:"Network Service Discovery",
+    spy:false, attack:true, data:false
+  },
+  "DNS Tunneling": {
+    icon:"🕳", cat:"Data Exfiltration via DNS",
+    what:"DNS queries with abnormally long subdomain labels (60+ characters) were detected. Attackers encode data inside DNS queries to smuggle it out through firewalls, because DNS is almost never blocked.",
+    why:"Your files, credentials, or internal data may be silently leaving your network hidden inside DNS queries. Most firewalls and intrusion systems ignore DNS traffic, making this a very effective covert channel that can persist for months undetected.",
+    todo:"1. Note the queried domain — this is the attacker's server.\n2. Block that domain at your DNS firewall NOW.\n3. Identify which internal device made this query.\n4. Run a full malware scan on that device.\n5. Deploy DNS filtering (Pi-hole, Cisco Umbrella) to catch future attempts.",
+    mitre_id:"T1071.004", mitre_name:"Application Layer Protocol: DNS",
+    spy:true, attack:true, data:true
+  },
+  "Fast-Flux DNS": {
+    icon:"🌀", cat:"Botnet / C2 Infrastructure",
+    what:"A single domain is returning a constantly changing list of 20+ IP addresses. Legitimate websites use 1–5 IPs. Fast-flux is used by botnets to make their servers impossible to block.",
+    why:"A device on your network contacting a fast-flux domain is almost certainly infected with malware receiving instructions from attackers. These domains are the hallmark of ransomware operators, RATs, and botnet command servers.",
+    todo:"1. Block the fast-flux domain at your DNS server immediately.\n2. Identify which device is querying this domain.\n3. Isolate and scan that device for malware.\n4. If malware is found, consider reimaging the device rather than just cleaning it.",
+    mitre_id:"T1568.001", mitre_name:"Dynamic Resolution: Fast Flux DNS",
+    spy:true, attack:true, data:true
+  },
+  "DNS C2 Beacon": {
+    icon:"📡", cat:"Active Malware — C2 Beaconing",
+    what:"A device is making 150+ DNS queries per minute to the same domain — a pattern that precisely matches malware 'checking in' with its command server. Normal apps never generate this query rate.",
+    why:"This strongly indicates active malware on your network waiting for instructions — to steal files, deploy ransomware, spread laterally, or launch attacks using your network. The malware is alive and in contact with attackers right now.",
+    todo:"URGENT:\n1. Identify the device making these DNS queries immediately.\n2. Disconnect it from the network now.\n3. Block the target domain at your DNS server.\n4. Preserve a memory dump before rebooting (for forensic analysis).\n5. Run malware and rootkit scans on the isolated device.\n6. Check what sensitive data was accessible on that machine.",
+    mitre_id:"T1071.004", mitre_name:"Application Layer Protocol: DNS C2",
+    spy:true, attack:true, data:true
+  },
+  "Suspicious TLD": {
+    icon:"⚠", cat:"High-Risk Domain",
+    what:"A DNS query was made to a domain using a top-level domain (.tk, .ml, .gq, .cf, .pw) that is predominantly used by malware, phishing sites, and scam infrastructure because they are free or nearly free.",
+    why:"These TLDs host phishing pages, malware downloads, and C2 servers. A device querying one may have clicked a phishing link, been redirected by malware, or be attempting to download a malicious payload.",
+    todo:"1. Check which device and user made this request.\n2. Ask if the user recently clicked a link in an email or pop-up.\n3. Scan the device for malware.\n4. Block the specific domain and consider blocking the entire TLD at your DNS filter.",
+    mitre_id:"T1566.002", mitre_name:"Phishing: Spearphishing Link",
+    spy:false, attack:true, data:true
+  },
+  "SSH Brute Force": {
+    icon:"🔨", cat:"Credential Attack — SSH",
+    what:"An external IP is bombarding your SSH server (port 22) with thousands of automated login attempts, cycling through usernames and passwords until one works.",
+    why:"SSH access is like a master key — if the attacker succeeds, they get full command-line control of your system. They can steal all files, install ransomware, create backdoors that survive reinstallation, and use your machine to attack others.",
+    todo:"1. Block this IP in your firewall now.\n2. If SSH is not needed externally, close port 22.\n3. Switch to SSH key authentication and disable password auth.\n4. Install fail2ban to automatically block repeated failures.\n5. Consider moving SSH to a non-standard port.\n6. Enable 2FA for SSH.",
+    mitre_id:"T1110.001", mitre_name:"Brute Force: Password Guessing",
+    spy:false, attack:true, data:true
+  },
+  "RDP Brute Force": {
+    icon:"🖥", cat:"Credential Attack — Remote Desktop",
+    what:"An external IP is repeatedly trying to log into Windows Remote Desktop (port 3389). This is the #1 entry technique used by ransomware gangs, who scan the entire internet for open RDP ports.",
+    why:"RDP breaches regularly result in ransomware being deployed across entire organisations. With RDP access the attacker can sit at your Windows desktop, disable antivirus, steal backups, and encrypt every file for ransom. The average ransomware payout is over $200,000.",
+    todo:"1. Block this IP immediately.\n2. Disable RDP if not needed (System Properties → Remote).\n3. If needed, put RDP behind a VPN — never expose it to the internet.\n4. Enforce account lockout after 5 failed attempts.\n5. Enable Network Level Authentication (NLA).\n6. Use a non-standard port and IP whitelist.",
+    mitre_id:"T1110.001", mitre_name:"Brute Force: Password Guessing — RDP",
+    spy:false, attack:true, data:true
+  },
+  "Password Spray": {
+    icon:"💦", cat:"Credential Attack — Spray",
+    what:"A single attacker is trying a small set of very common passwords (like 'Password123') across many different services at once. This evades account lockout policies by staying under the per-service threshold.",
+    why:"Password spraying is highly effective because many users share common, predictable passwords. It defeats lockout policies and is the entry technique used in major corporate breaches including Microsoft and US government systems.",
+    todo:"1. Block this IP immediately.\n2. MOST IMPORTANT: Enable Multi-Factor Authentication (MFA) — this stops spray attacks completely.\n3. Enforce strong password policies (12+ characters, no common words).\n4. Check if any accounts were successfully logged into from this IP.\n5. Force password resets for any successfully sprayed accounts.",
+    mitre_id:"T1110.003", mitre_name:"Brute Force: Password Spraying",
+    spy:false, attack:true, data:true
+  },
+  "Credential Stuffing": {
+    icon:"📋", cat:"Account Takeover Attack",
+    what:"A high volume of login attempts is hitting your web application from one IP. Credential stuffing uses real username/password pairs stolen from other data breaches, where users reused the same password.",
+    why:"Billions of real credentials from past breaches are freely available online. Even a 0.1% success rate can compromise thousands of accounts. Leads to identity theft, fraudulent transactions, and unauthorised access to private data.",
+    todo:"1. Block this IP and implement rate limiting on your login page.\n2. Add CAPTCHA to the login form.\n3. Enable MFA for all accounts.\n4. Check if any logins from this IP were successful — reset those accounts' passwords.\n5. Use Have I Been Pwned to check if users' emails are in breach databases.",
+    mitre_id:"T1110.004", mitre_name:"Brute Force: Credential Stuffing",
+    spy:false, attack:true, data:true
+  },
+  "Sustained Attack": {
+    icon:"🔴", cat:"Persistent Threat Actor",
+    what:"The same IP has triggered multiple attack detections in a short window. This is not random internet scanning — this is a focused, determined attacker who is actively targeting your network specifically.",
+    why:"Repeated attack verdicts from one source indicate an organised actor testing multiple attack vectors. This level of persistence is typical of criminal groups pursuing ransomware, data theft, or targeted intrusion.",
+    todo:"1. Permanently block this IP at your firewall.\n2. Report the IP to AbuseIPDB and your ISP's abuse team.\n3. Review all logs for this IP to understand what was attempted.\n4. Increase alerting sensitivity for the next 24–48 hours.\n5. Consider engaging a cybersecurity team if this continues.",
+    mitre_id:"T1595", mitre_name:"Active Scanning",
+    spy:false, attack:true, data:true
+  },
+  "Weak TLS Ciphers": {
+    icon:"🔓", cat:"Encryption Weakness",
+    what:"A device is connecting using old, broken encryption algorithms (RC4, 3DES, AES-CBC). Modern secure connections use AES-GCM or ChaCha20. Weak ciphers mean your 'encrypted' connection could potentially be decrypted.",
+    why:"Connections using these ciphers can be decrypted by a sufficiently powered attacker, especially one who has recorded past traffic. RC4 can be broken in real-time. This also means connections lack forward secrecy — one key compromise exposes all past traffic.",
+    todo:"1. Identify which application is making this connection.\n2. Update the application or its TLS/SSL library.\n3. If you control the server, disable weak cipher suites in your TLS configuration.\n4. Enforce TLS 1.2 or 1.3 minimum everywhere.\n5. Test your servers at SSL Labs (ssllabs.com/ssltest).",
+    mitre_id:"T1557", mitre_name:"Adversary-in-the-Middle",
+    spy:true, attack:false, data:true
+  },
+  "TLS without SNI": {
+    icon:"👻", cat:"Suspicious Encrypted Connection",
+    what:"An HTTPS connection was made directly to an IP address without sending an SNI (hostname) header. Every legitimate browser and app sends SNI. Omitting it is a deliberate technique used by malware to avoid domain-based filtering.",
+    why:"Malware connects to C2 servers by IP address rather than domain name to bypass DNS filtering and domain blacklists. No SNI means the connection destination is effectively hidden from security tools. This is a strong indicator of covert malware communication.",
+    todo:"1. Use netstat or Process Monitor to find which process made this connection.\n2. If it's an unknown or suspicious process, scan the device for malware.\n3. Block outbound connections to this IP at your firewall.\n4. Consider blocking all port 443 connections to bare IP addresses if not required.",
+    mitre_id:"T1071.001", mitre_name:"Application Layer Protocol: Web Protocols",
+    spy:true, attack:false, data:true
+  },
+  "Audit Log Cleared": {
+    icon:"🗑", cat:"Evidence Tampering — CRITICAL",
+    what:"The Windows Security event log was deliberately cleared. This destroys the forensic record of everything that happened on this machine — logins, file access, privilege changes, and every security event.",
+    why:"Attackers clear logs after a breach to erase evidence of what they did. Legitimate administrators almost never do this on a production system without specific policy. This is one of the clearest signs that someone is covering their tracks after a compromise.",
+    todo:"TREAT AS ACTIVE INCIDENT:\n1. Who cleared the log? Was it an authorised administrator?\n2. If not authorised, assume breach — do not reboot the machine.\n3. Take a memory dump immediately (forensic evidence).\n4. Isolate the machine from the network.\n5. Engage your incident response team or forensic specialist.\n6. Forward future logs to a remote SIEM to prevent evidence destruction.",
+    mitre_id:"T1070.001", mitre_name:"Clear Windows Event Logs",
+    spy:true, attack:true, data:true
+  },
+  "Added to Administrators": {
+    icon:"👑", cat:"Privilege Escalation",
+    what:"A user account was just added to the local Administrators group, giving it unrestricted access to everything on this machine.",
+    why:"Admin rights are the 'master key' to a Windows system. Attackers elevate their stolen account to maintain persistent access even after detection. With admin rights they can install backdoors, disable antivirus, access encrypted files, and spread to other machines.",
+    todo:"1. Was this authorised by IT? If not — this is an active compromise.\n2. Remove the account from Administrators immediately.\n3. Reset the password of the account used to make this change.\n4. Review all actions taken by this account since escalation.\n5. Enable alerts for all future privileged group changes.",
+    mitre_id:"T1098", mitre_name:"Account Manipulation",
+    spy:true, attack:true, data:true
+  },
+  "New Service Installed": {
+    icon:"⚙", cat:"Persistence — Windows Service",
+    what:"A new Windows service was installed. Services run in the background with elevated privileges and restart automatically with Windows — the most common way malware ensures it survives reboots.",
+    why:"Rootkits, Remote Access Trojans, ransomware loaders, and keyloggers routinely install themselves as Windows services. The service may run as SYSTEM (highest possible privilege) and be invisible to casual inspection.",
+    todo:"1. Open services.msc and find the new service — note its executable path.\n2. Was this installed by software you just installed legitimately?\n3. If unexpected, stop and disable it immediately.\n4. Submit the executable path to VirusTotal.\n5. Do not delete confirmed malware without preserving evidence first.",
+    mitre_id:"T1543.003", mitre_name:"Create or Modify System Process: Windows Service",
+    spy:true, attack:true, data:true
+  },
+  "New Local Account": {
+    icon:"👤", cat:"Backdoor Account",
+    what:"A new local user account was created on this machine. Attackers create their own accounts to maintain access even after the compromised account is discovered and locked.",
+    why:"An unauthorised account is a hidden backdoor — even if you change all passwords and think you've secured the machine, the attacker can still log back in. This is a persistence technique used by APT groups and ransomware operators.",
+    todo:"1. Run 'net user' in Command Prompt to list all accounts.\n2. Is this a new account you or IT created? If not, delete it immediately.\n3. Check if this account has been added to any groups.\n4. Assume the machine is compromised and investigate all recent activity.",
+    mitre_id:"T1136.001", mitre_name:"Create Account: Local Account",
+    spy:true, attack:true, data:false
+  },
+  "Failed Logon": {
+    icon:"🔐", cat:"Failed Authentication",
+    what:"A login attempt to this machine failed. A single failure is normal (mistyped password), but repeated failures from external IPs indicate a brute force or credential attack.",
+    why:"Repeated failed logons from external sources mean someone is actively trying to break into this machine. If they succeed, they gain full access under that user's account.",
+    todo:"1. Was this you? If yes, no action needed.\n2. Multiple failures from external IP? Block that IP immediately.\n3. Enable account lockout policy (5 failures → 30 min lockout).\n4. Enable MFA for all accounts.",
+    mitre_id:"T1110", mitre_name:"Brute Force",
+    spy:false, attack:true, data:false
+  },
+  "FIM — File Modified": {
+    icon:"📝", cat:"File Tampering",
+    what:"The SHA-256 hash of a monitored file has changed — its contents have been altered. This catches changes that would otherwise be invisible to you.",
+    why:"Unauthorised modification could mean: malware injected code into a legitimate program, configuration files were backdoored, a webshell was planted, or ransomware has begun encrypting files.",
+    todo:"1. Compare the file with the last known-good version (from backup or version control).\n2. What changed? Added code? Configuration entries? Encrypted content?\n3. If a system file changed unexpectedly, assume rootkit activity.\n4. Run antivirus on the file and restore from backup if modification was not authorised.",
+    mitre_id:"T1565.001", mitre_name:"Stored Data Manipulation",
+    spy:false, attack:true, data:true
+  },
+  "FIM — File Created": {
+    icon:"📄", cat:"Unexpected File",
+    what:"A new file appeared in a monitored directory that wasn't there in the last scan.",
+    why:"Malware drops executable files, scripts, and configuration files. Attackers leave tools and backdoors. Webshells are planted as PHP/ASP files. Any unexpected executable in a sensitive directory is high priority.",
+    todo:"1. Was this from an installer or software you just ran?\n2. What type is it? Executable (.exe, .dll, .ps1) files are highest risk.\n3. Do NOT run unknown executables — submit to VirusTotal first.\n4. Check when it appeared and correlate with other system activity.",
+    mitre_id:"T1105", mitre_name:"Ingress Tool Transfer",
+    spy:false, attack:true, data:false
+  },
+  "FIM — File Deleted": {
+    icon:"🗑", cat:"File Deleted",
+    what:"A previously monitored file was deleted.",
+    why:"Attackers delete security tools, logs, and forensic evidence to cover their tracks. Ransomware deletes shadow copies and backups before encrypting files. Wipers systematically destroy files for maximum damage.",
+    todo:"1. Was this expected (uninstall, cleanup, update)?\n2. Was it a security tool, log, or backup? Treat as high priority.\n3. Restore from backup if needed.\n4. If log deletion alongside other alerts, treat as active incident.",
+    mitre_id:"T1485", mitre_name:"Data Destruction",
+    spy:false, attack:true, data:true
+  },
+  "UEBA — Off-Hours Login": {
+    icon:"🌙", cat:"Suspicious Behaviour — Off-Hours Login",
+    what:"A user account logged in at an unusual time, outside the normal working hours pattern this user has historically shown. This matches the profile of a stolen credential being used by an attacker.",
+    why:"Attackers who steal credentials prefer to use them at night when fewer people are watching. Off-hours logins were the first indicator of compromise in many high-profile breaches, including the Target breach and SolarWinds attack.",
+    todo:"1. Contact the user directly — were they actually working at that time?\n2. Check where the login came from (workstation name).\n3. If the user was not working, reset the password immediately and enable MFA.\n4. Review what the account accessed during that session.",
+    mitre_id:"T1078", mitre_name:"Valid Accounts",
+    spy:true, attack:true, data:true
+  },
+  "UEBA — New Workstation": {
+    icon:"💻", cat:"Suspicious Behaviour — Unknown Device",
+    what:"A user account logged in from a device it has never used before. This can happen when users switch computers, but it is also the exact pattern seen when stolen credentials are used from an attacker's machine.",
+    why:"When credentials are stolen via phishing or keylogger, the attacker logs in from their own machine — which shows up as an unknown workstation. This is one of the clearest signals of active credential theft.",
+    todo:"1. Contact the user — are they using a new or borrowed computer?\n2. If unexpected, reset the password immediately and enable MFA.\n3. Check what data the account accessed from this unknown workstation.\n4. Consider device certificate authentication to prevent logins from unregistered machines.",
+    mitre_id:"T1078", mitre_name:"Valid Accounts",
+    spy:true, attack:false, data:true
+  },
+  "Threat Intelligence Hit": {
+    icon:"🏴", cat:"Known Malicious IP",
+    what:"AbuseIPDB confirmed this IP is known to the global security community as a source of malicious activity — reported by security researchers and attack victims.",
+    why:"Traffic to or from known malicious IPs is almost never legitimate. If a device on your network is connecting outbound to this IP, it is very likely infected with malware. If it is connecting inbound, it is probing or attacking you.",
+    todo:"1. Block this IP permanently at your firewall.\n2. Check if any device connected OUTBOUND to this IP — if so, scan that device for malware.\n3. Review the full AbuseIPDB report for the type and recency of abuse.\n4. Quarantine any device found connecting to this IP.",
+    mitre_id:"T1594", mitre_name:"Search Victim-Owned Websites",
+    spy:true, attack:true, data:true
+  },
+  "IP Auto-Blocked": {
+    icon:"🔒", cat:"Firewall Block Applied",
+    what:"Security Monitor automatically added a Windows Firewall rule to block this IP after detecting malicious activity. Both inbound and outbound connections are now blocked.",
+    why:"This is a protective action. The block prevents further contact with the attacker. The timer shown indicates when it will automatically expire.",
+    todo:"1. No immediate action required — the block is active.\n2. To make it permanent, go to Blocked IPs and remove the expiry.\n3. Review the triggering alert to understand what this IP was doing.",
+    mitre_id:null, mitre_name:null,
+    spy:false, attack:false, data:false
+  },
+};
+
+const DEFAULT_CTX = {
+  icon:"⚠", cat:"Security Alert",
+  what:"An anomalous or potentially malicious event was detected on your network.",
+  why:"This event matches known threat patterns and warrants investigation.",
+  todo:"1. Review technical details below.\n2. Identify the involved device/user.\n3. Determine if this is legitimate activity.\n4. Block the source IP if in doubt.",
+  mitre_id:null, mitre_name:null,
+  spy:false, attack:true, data:false
+};
+
+function getCtx(rule) {
+  if (THREAT_DB[rule]) return THREAT_DB[rule];
+  for (const [k,v] of Object.entries(THREAT_DB)) {
+    if (rule.includes('Brute Force') && k.endsWith('Brute Force')) {
+      return {...v, what: v.what.replace('SSH','').replace('RDP','')};
+    }
+  }
+  return DEFAULT_CTX;
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+let _token = localStorage.getItem('sm_token') || '';
+let _tenantId = localStorage.getItem('sm_tenant') || '';
+let _filter = 'all';
+let _alerts = [];
+let _sse = null;
+let _received = 0;
+let _openCard = null;
+
+window.addEventListener('load', () => { if (_token) enterDashboard(); });
+
+// ── Auth ──────────────────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('login-panel').style.display = 'flex';
+  document.getElementById('dashboard').style.display   = 'none';
+  document.getElementById('tab-bar').classList.remove('visible');
+}
+async function doLogin() {
+  const name = document.getElementById('login-name').value.trim() || 'admin';
+  const pass = document.getElementById('login-pass').value;
+  const err  = document.getElementById('login-error');
+  err.style.display = 'none';
+  try {
+    const r = await fetch('/api/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, password: pass}),
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.error || 'Login failed'; err.style.display='block'; return; }
+    _token = d.token; _tenantId = d.tenant_id;
+    localStorage.setItem('sm_token', _token);
+    localStorage.setItem('sm_tenant', _tenantId);
+    enterDashboard();
+  } catch(e) { err.textContent = 'Server unreachable'; err.style.display='block'; }
+}
+function doLogout() {
+  _token=''; _tenantId='';
+  localStorage.removeItem('sm_token'); localStorage.removeItem('sm_tenant');
+  if (_sse) { _sse.close(); _sse=null; }
+  document.getElementById('login-btn').style.display  = '';
+  document.getElementById('logout-btn').style.display = 'none';
+  showLogin();
+}
+function enterDashboard() {
+  document.getElementById('login-panel').style.display   = 'none';
+  document.getElementById('dashboard').style.display     = 'flex';
+  document.getElementById('tab-bar').classList.add('visible');
+  document.getElementById('login-btn').style.display     = 'none';
+  document.getElementById('logout-btn').style.display    = '';
+  document.getElementById('cfg-server').textContent      = location.host;
+  document.getElementById('cfg-tenant').textContent      = _tenantId || '–';
+  loadAlerts(); connectSSE(); loadStats();
+}
+
+// ── Data ──────────────────────────────────────────────────────────────────
+async function loadAlerts() {
+  try {
+    const r = await apiFetch('/api/alerts?limit=300');
+    const d = await r.json();
+    _alerts = d.alerts || [];
+    renderAlerts();
+  } catch(e) {}
+}
+async function loadStats() {
+  try {
+    const r = await apiFetch('/api/stats');
+    const d = await r.json();
+    document.getElementById('s-crit').textContent  = d.by_severity?.critical || 0;
+    document.getElementById('s-high').textContent  = d.by_severity?.high     || 0;
+    document.getElementById('s-total').textContent = d.total_alerts           || 0;
+    document.getElementById('s-live').textContent  = '●';
+    document.getElementById('cfg-count').textContent = d.total_alerts || 0;
+    if (d.by_category) {
+      document.getElementById('cfg-cats').textContent =
+        Object.entries(d.by_category).map(([k,v])=>`${k}:${v}`).join(' · ');
+    }
+  } catch(e) {}
+  setTimeout(loadStats, 20000);
+}
+async function clearAlerts() {
+  if (!confirm('Clear all alerts?')) return;
+  try {
+    await apiFetch('/api/alerts/clear', {method:'DELETE'});
+    _alerts=[]; renderAlerts(); toast('Alerts cleared');
+  } catch(e) {}
+}
+function apiFetch(url, opts={}) {
+  return fetch(url, {...opts, headers:{'Authorization':'Bearer '+_token, ...(opts.headers||{})}});
+}
+
+// ── SSE ───────────────────────────────────────────────────────────────────
+function connectSSE() {
+  if (_sse) _sse.close();
+  const dot=document.getElementById('status-dot'), txt=document.getElementById('status-text');
+  _sse = new EventSource(`/api/stream?token=${encodeURIComponent(_token)}`);
+  document.getElementById('cfg-sse').textContent = 'connecting…';
+  _sse.addEventListener('connected', ()=>{
+    dot.classList.add('live'); txt.textContent='Live';
+    document.getElementById('cfg-sse').textContent='connected';
+    document.getElementById('s-live').textContent='●';
+  });
+  _sse.addEventListener('alert', e=>{
+    try {
+      const a = JSON.parse(e.data);
+      _alerts.unshift(a); if(_alerts.length>500) _alerts.pop();
+      _received++;
+      document.getElementById('cfg-count').textContent = _received;
+      prependCard(a); loadStats();
+      if (Notification.permission==='granted' && ['critical','high'].includes(a.severity)) {
+        new Notification('⚠ ' + (a.severity||'').toUpperCase() + ': ' + a.rule_name, {
+          body: a.message || '', icon:'/static/icon-192.png'
+        });
+      }
+    } catch(ex) {}
+  });
+  _sse.addEventListener('ping', ()=>{ dot.classList.add('live'); });
+  _sse.onerror=()=>{
+    dot.classList.remove('live'); txt.textContent='Reconnecting…';
+    document.getElementById('cfg-sse').textContent='reconnecting…';
+    setTimeout(connectSSE, 4000);
+  };
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+function setFilter(f, btn) {
+  _filter=f;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  btn.classList.add('active');
+  renderAlerts();
+}
+function filtered() {
+  if (_filter==='all') return _alerts;
+  return _alerts.filter(a=> a.severity===_filter || a.category===_filter);
+}
+function renderAlerts() {
+  const list=document.getElementById('alert-list');
+  const empty=document.getElementById('empty-state');
+  const items = filtered();
+  if (!items.length) { list.innerHTML=''; list.appendChild(empty); empty.style.display='block'; return; }
+  empty.style.display='none';
+  list.innerHTML = items.map((a,i)=>buildCard(a,i)).join('');
+}
+function prependCard(a) {
+  const empty=document.getElementById('empty-state');
+  empty.style.display='none';
+  const list=document.getElementById('alert-list');
+  const pass = _filter==='all' || a.severity===_filter || a.category===_filter;
+  if (!pass) return;
+  const div=document.createElement('div');
+  div.innerHTML = buildCard(a, 'new_'+Date.now());
+  list.insertBefore(div.firstElementChild, list.firstChild);
+}
+function buildCard(a, id) {
+  const sev  = a.severity || 'low';
+  const cls  = sev==='medium' ? 'med' : sev;
+  const ctx  = getCtx(a.rule_name || '');
+  const icon = ctx.icon || '⚠';
+  const tags = [];
+  if (ctx.spy)    tags.push('<span class="risk-tag spy">🕵 Surveillance Risk</span>');
+  if (ctx.attack) tags.push('<span class="risk-tag attack">⚔ Active Attack</span>');
+  if (ctx.data)   tags.push('<span class="risk-tag data">📤 Data Theft Risk</span>');
+
+  // Packet metadata strip
+  const pktFields = [];
+  const ip   = a.source_ip || a.src_ip || '';
+  const port = a.dst_port || a.port || '';
+  const proto= a.protocol || a.proto || '';
+  const rate = a.rate || a.attempts || a.count || '';
+  const sni  = a.sni || '';
+  const ja3  = a.ja3 || '';
+  const path = a.path || '';
+  const uid  = a.user || '';
+  if (ip)    pktFields.push({k:'Source IP',  v:ip});
+  if (port)  pktFields.push({k:'Port',       v:port});
+  if (proto) pktFields.push({k:'Protocol',   v:proto});
+  if (rate)  pktFields.push({k:'Rate/Count', v:rate});
+  if (sni)   pktFields.push({k:'SNI',        v:sni});
+  if (ja3)   pktFields.push({k:'JA3 Hash',   v:ja3.substring(0,16)+'…'});
+  if (path)  pktFields.push({k:'File Path',  v:path.split('\\').pop() || path.split('/').pop()});
+  if (uid)   pktFields.push({k:'User',       v:uid});
+  if (a.timestamp) pktFields.push({k:'Time', v:a.timestamp.slice(-8)});
+  if (a.event_id)  pktFields.push({k:'Event ID', v:'#'+a.event_id});
+  if (a.category)  pktFields.push({k:'Category', v:a.category});
+
+  const pktStrip = pktFields.length ? `
+    <div class="pkt-strip">
+      ${pktFields.map(f=>`
+        <div class="pkt-cell">
+          <div class="pkt-k">${esc(f.k)}</div>
+          <div class="pkt-v">${esc(String(f.v))}</div>
+        </div>`).join('')}
+    </div>` : '';
+
+  // All remaining fields for technical detail
+  const skip = new Set(['rule_name','severity','source_ip','message','timestamp','_id','category',
+                         'src_ip','dst_port','port','protocol','proto','rate','attempts','count',
+                         'sni','ja3','path','user','event_id','_tenant']);
+  const techRows = Object.entries(a)
+    .filter(([k])=>!skip.has(k))
+    .map(([k,v])=>`<div class="detail-row"><span class="dk">${esc(k)}</span><span class="dv">${esc(String(v)).substring(0,120)}</span></div>`)
+    .join('');
+
+  const mitre = ctx.mitre_id ? `
+    <div class="mitre-badge">
+      🛡 <span class="mid">${esc(ctx.mitre_id)}</span>
+      <span class="mname">${esc(ctx.mitre_name || '')}</span>
+    </div>` : '';
+
+  return `
+  <div class="alert-card ${cls}" id="card-${id}">
+    <div class="card-head" onclick="toggleCard('${id}')">
+      <div class="card-top">
+        <div class="card-icon-rule">
+          <span class="card-icon">${icon}</span>
+          <span class="card-rule">${esc(a.rule_name || 'Unknown Alert')}</span>
+        </div>
+        <span class="badge ${cls}">${esc(sev)}</span>
+      </div>
+      <div class="risk-tags">${tags.join('')}</div>
+    </div>
+
+    ${pktStrip}
+
+    <div class="expand-hint" id="hint-${id}" onclick="toggleCard('${id}')">
+      <span>Tap for explanation &amp; recommended actions</span>
+      <span class="arrow">▼</span>
+    </div>
+
+    <div class="card-detail" id="detail-${id}">
+
+      <div class="sec-head">🔍 What Is Happening</div>
+      <div class="explain-box">${esc(ctx.what)}</div>
+
+      <div class="sec-head">⚠ Why This Is Dangerous</div>
+      <div class="explain-box"><strong>${esc(ctx.cat)}</strong> — ${esc(ctx.why)}</div>
+
+      <div class="sec-head">✅ What You Should Do</div>
+      <div class="explain-box steps">${esc(ctx.todo)}</div>
+
+      ${mitre}
+
+      ${a.message ? `<div class="sec-head">📋 Alert Message</div>
+      <div class="explain-box">${esc(a.message)}</div>` : ''}
+
+      ${techRows ? `<div class="sec-head">🔧 Technical Details</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">${techRows}</div>` : ''}
+
+      <div class="btn-row">
+        ${ip && ip!=='-' && ip!=='localhost' ? `<button class="btn btn-block" onclick="blockIp('${esc(ip)}', event)">🔒 Block ${esc(ip)}</button>` : ''}
+        <button class="btn btn-share" onclick="shareAlert('${id}', event)">📤 Share</button>
+        <button class="btn btn-copy"  onclick="copyAlert('${id}', event)">📋 Copy</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Card interactions ─────────────────────────────────────────────────────
+function toggleCard(id) {
+  const detail = document.getElementById('detail-'+id);
+  const hint   = document.getElementById('hint-'+id);
+  if (!detail) return;
+  const isOpen = detail.classList.contains('open');
+  if (_openCard && _openCard !== id) {
+    const prev = document.getElementById('detail-'+_openCard);
+    const prevH = document.getElementById('hint-'+_openCard);
+    if (prev)  prev.classList.remove('open');
+    if (prevH) prevH.classList.remove('open');
+  }
+  detail.classList.toggle('open', !isOpen);
+  hint.classList.toggle('open', !isOpen);
+  _openCard = isOpen ? null : id;
+}
+
+async function blockIp(ip, e) {
+  e.stopPropagation();
+  if (!confirm(`Block ${ip} for 60 minutes via Windows Firewall?`)) return;
+  try {
+    const r = await apiFetch('/api/block', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ip, ttl_minutes:60, reason:'Blocked from web dashboard'})
+    });
+    const d = await r.json();
+    toast(d.message || (d.ok ? 'Blocked' : 'Block failed'));
+  } catch(e) { toast('Could not reach server'); }
+}
+
+function shareAlert(id, e) {
+  e.stopPropagation();
+  const a = getAlertById(id);
+  if (!a) return;
+  const ctx = getCtx(a.rule_name || '');
+  const text = `[${(a.severity||'').toUpperCase()}] ${a.rule_name}\n${ctx.cat}\nIP: ${a.source_ip || '–'}\n${a.message || ''}\n\nWhy dangerous: ${ctx.why.substring(0,150)}…\n\n${a.timestamp}`;
+  if (navigator.share) {
+    navigator.share({title:'Security Alert — '+a.rule_name, text}).catch(()=>{});
+  } else {
+    navigator.clipboard.writeText(text).then(()=>toast('Copied to clipboard'));
+  }
+}
+function copyAlert(id, e) {
+  e.stopPropagation();
+  const a = getAlertById(id);
+  if (!a) return;
+  navigator.clipboard.writeText(JSON.stringify(a, null, 2)).then(()=>toast('JSON copied'));
+}
+function getAlertById(id) {
+  if (id.startsWith('new_')) return _alerts[0];
+  const idx = parseInt(id);
+  const items = filtered();
+  return isNaN(idx) ? null : items[idx];
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+
+// ── Tab nav ────────────────────────────────────────────────────────────────
+function showTab(name, el) {
+  document.querySelectorAll('.tab-item').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('dashboard').style.display   = name==='alerts' ? 'flex':'none';
+  document.getElementById('map-panel').classList[      name==='map'      ?'add':'remove']('visible');
+  document.getElementById('settings-panel').classList[ name==='settings' ?'add':'remove']('visible');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function toast(msg, dur=2500) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), dur);
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────
+if ('Notification' in window && Notification.permission==='default') Notification.requestPermission();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
+</script>
+</body>
+</html>

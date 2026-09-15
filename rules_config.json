@@ -1,0 +1,39 @@
+{
+  "rules": {
+    "ip_reputation": {
+      "enabled": true,
+      "malicious_ips": ["192.168.1.100", "10.0.0.5", "203.0.113.15"]
+    },
+    "port_scan": {
+      "enabled": true,
+      "max_ports_per_minute": 50
+    },
+    "flood_detection": {
+      "enabled": true,
+      "max_packets_per_second": 1000
+    },
+    "protocol_anomaly": {
+      "enabled": true
+    },
+    "custom_rules": [
+      {
+        "name": "Oversized Packets",
+        "type": "threshold",
+        "field": "Length",
+        "operator": ">",
+        "value": 1500,
+        "severity": "medium",
+        "enabled": true
+      },
+      {
+        "name": "Suspicious TTL",
+        "type": "threshold",
+        "field": "TTL",
+        "operator": "<",
+        "value": 10,
+        "severity": "high",
+        "enabled": true
+      }
+    ]
+  }
+}

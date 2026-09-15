@@ -1,0 +1,34 @@
+{
+  "notifications": {
+    "enabled": false,
+    "min_severity": "critical",
+    "network": false,
+    "system": false,
+    "file_scan": false,
+    "sound": false
+  },
+  "appearance": {
+    "accent": "#4f8ef7"
+  },
+  "detection": {
+    "arp": true,
+    "dns": true,
+    "brute_force": true,
+    "threat_intel": true,
+    "tls": true,
+    "auto_block": false,
+    "attack_threshold": 75
+  },
+  "file_protection": {
+    "usb_monitor": true,
+    "download_watcher": true,
+    "auto_scan": true,
+    "cloud_lookup": true
+  },
+  "performance": {
+    "max_alerts": 150,
+    "packet_rate": 20,
+    "max_rows": 300
+  },
+  "whitelist": []
+}

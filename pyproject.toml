@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+# Only auto-discover tests under tests/. The root-level test_desktop_app.py
+# and demo_test.py are standalone manual scripts (they exercise a live PyQt6
+# GUI / print their own pass-fail report and call sys.exit()) and are meant
+# to be run directly with `python <script>.py`, not collected by pytest.
+testpaths = ["tests"]
+# The pre-existing .pytest_cache directory has a locked ACL on this machine
+# (Access denied even to its owner) that pytest can't write to; disabling the
+# cache plugin avoids a spurious PytestCacheWarning on every run.
+addopts = "-p no:cacheprovider"

@@ -1,0 +1,38 @@
+# ── Secrets ────────────────────────────────────────────────────────────────
+.env
+
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.pytest_cache_local/
+*.egg-info/
+
+# ── Virtual environment ───────────────────────────────────────────────────
+.venv/
+venv/
+
+# ── Build / packaging output (regenerate with `python build.py`) ──────────
+build/
+dist/
+*.spec.bak
+
+# ── Runtime-generated state (regenerated on first run, not source) ────────
+blocked_ips.json
+fim_baseline.json
+feedback_buffer.jsonl
+geo_cache.json
+network_map.html
+model_version_history.json
+model_versions/
+logs/*.log
+
+# ── Editor / OS ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# ── Word scratch/lock files ────────────────────────────────────────────────
+~$*.docx
