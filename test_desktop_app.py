@@ -18,7 +18,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="repla
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
-from PyQt6.QtWidgets import QApplication, QPushButton, QLabel, QFrame, QTableWidget
+from PyQt6.QtWidgets import QApplication, QPushButton, QLabel, QFrame, QTableWidget, QTabWidget
 from PyQt6.QtCore import QTimer, QCoreApplication, Qt
 from PyQt6.QtTest import QTest
 
@@ -281,6 +281,7 @@ packets = [
 ]
 for p in packets:
     traf.add_row(p)
+traf._apply()   # bypass the 250ms throttle timer to force a synchronous refresh
 pump()
 
 check("add_row() adds to _all_rows",
@@ -339,6 +340,7 @@ traf.add_row(dict(
     protocol="TCP", length=60, status="SAFE",
     confidence=None, anomaly_score=None,
 ))
+traf._apply()   # bypass the 250ms throttle timer to force a synchronous refresh
 pump()
 check("add_row() handles None confidence/anomaly_score",
       lambda: traf.tbl.rowCount() == 1)
@@ -464,6 +466,12 @@ section("8  ToolsTab")
 tools = da.ToolsTab(model_ready=False)
 tools.show(); pump()   # must be shown for _result_frame.isVisible() to work
 
+# _result_frame lives on the "DDoS Test" page (index 1) of the inner QTabWidget;
+# a widget nested inside a non-active QTabWidget page reports isVisible()==False
+# even after .show(), so switch to that page before checking visibility below.
+_inner_tabs = tools.findChild(QTabWidget, "innerTabs")
+_inner_tabs.setCurrentIndex(1); pump()
+
 check("ToolsTab creates without crash", lambda: True)
 
 check("Run button disabled when model_ready=False",
@@ -570,7 +578,377 @@ check("_email_done is pyqtSignal",
 
 
 # ==============================================================================
-section("9  MainWindow — navigation & signals")
+section("9  GeoMapTab")
+# ==============================================================================
+
+from detectors.geo_mapper import GeoMapper
+
+geo_tab = da.GeoMapTab()
+
+check("GeoMapTab creates without crash", lambda: True)
+
+check("Stat labels initialise to '0'",
+      lambda: geo_tab._lbl_ips.text() == "0" and geo_tab._lbl_countries.text() == "0"
+              and geo_tab._lbl_events.text() == "0")
+
+# NOTE: this test harness creates QApplication *before* importing desktop_app,
+# so PyQt6-WebEngine's "must be imported before QCoreApplication exists" rule
+# means da._HAS_WEBENGINE is False here even when the package is installed
+# (the real app imports desktop_app first, so it gets True there). Assert
+# consistency with whatever da._HAS_WEBENGINE resolved to in this process,
+# rather than hardcoding either outcome.
+check("Map view widget presence matches _HAS_WEBENGINE",
+      lambda: (geo_tab._map_view is not None) == da._HAS_WEBENGINE)
+
+geo_obj = GeoMapper()
+geo_tab.set_mapper(geo_obj)
+pump()
+check("set_mapper() runs without crash", lambda: True)
+
+geo_obj.track_ip("8.8.8.8", "Test Rule", "high")
+geo_tab._refresh_stats()
+pump()
+check("_refresh_stats() reflects tracked IP count",
+      lambda: geo_tab._lbl_ips.text() == "1")
+
+check("_refresh_stats() reflects tracked event count",
+      lambda: geo_tab._lbl_events.text() == "1")
+
+check("Note label updates once events exist",
+      lambda: "Tracking" in geo_tab._lbl_note.text())
+
+geo_tab.on_new_alert()
+pump()
+check("on_new_alert() runs without crash", lambda: True)
+
+
+# ==============================================================================
+section("10  FileScannerTab")
+# ==============================================================================
+
+from detectors.file_scanner import ScanResult
+
+fscan = da.FileScannerTab()
+
+check("FileScannerTab creates without crash", lambda: True)
+
+check("Stat labels initialise to '0'",
+      lambda: fscan._lbl_drives.text() == "0" and fscan._lbl_scanned.text() == "0"
+              and fscan._lbl_threats.text() == "0")
+
+fscan._set_status("Scanning test.txt…")
+check("_set_status() updates status label",
+      lambda: "Scanning test.txt" in fscan._status_lbl.text())
+
+clean_result = ScanResult(
+    path=r"C:\Users\test\clean.txt", sha256="a" * 64, md5="b" * 32, size=1024,
+    verdict="CLEAN", risk_score=5, indicators=[], cloud_match=None,
+)
+fscan._on_scan_result(clean_result)
+pump()
+check("_on_scan_result(CLEAN) increments scan count",
+      lambda: fscan._scan_count == 1)
+check("_on_scan_result(CLEAN) adds a results row",
+      lambda: fscan._tbl.rowCount() == 1)
+check("_on_scan_result(CLEAN) does not increment threat count",
+      lambda: fscan._threat_count == 0)
+
+fs_alerts: list[dict] = []
+fscan.alert_signal.connect(lambda a: fs_alerts.append(a))
+malware_result = ScanResult(
+    path=r"C:\Users\test\evil.exe", sha256="c" * 64, md5="d" * 32, size=2048,
+    verdict="MALWARE", risk_score=100,
+    indicators=["CONFIRMED MALWARE: Trojan.Generic"],
+    cloud_match={"file_type": "exe", "tags": ["trojan"],
+                 "first_seen": "2024-01-01", "reporter": "test"},
+)
+fscan._on_scan_result(malware_result)
+pump()
+check("_on_scan_result(MALWARE) increments threat count",
+      lambda: fscan._threat_count == 1)
+check("_on_scan_result(MALWARE) emits alert_signal",
+      lambda: len(fs_alerts) == 1 and fs_alerts[0]["rule_name"] == "Malware Detected")
+check("_on_scan_result(MALWARE) alert severity is critical",
+      lambda: fs_alerts[0]["severity"] == "critical")
+
+fscan._refresh_drives()
+pump()
+check("_refresh_drives() runs without crash", lambda: True)
+
+fscan._clear_results()
+check("_clear_results() resets scan count",
+      lambda: fscan._scan_count == 0)
+check("_clear_results() empties table",
+      lambda: fscan._tbl.rowCount() == 0)
+
+
+# ==============================================================================
+section("11  MLAnalysisTab")
+# ==============================================================================
+
+ml_tab = da.MLAnalysisTab()
+
+check("MLAnalysisTab creates without crash", lambda: True)
+
+check("Metric cards initialise to '—'",
+      lambda: all(ml_tab._metric_vals[k].text() == "—"
+                  for k in ("accuracy", "f1", "precision", "recall", "auc")))
+
+check("get_metrics() returns None before compute",
+      lambda: ml_tab.get_metrics() is None)
+
+ml_warn_msgs: list[str] = []
+_orig_warn_ml = da.QMessageBox.warning
+da.QMessageBox.warning = lambda parent, title, msg, *a: ml_warn_msgs.append(msg)
+ml_tab._on_metrics(None)
+pump()
+check("_on_metrics(None) shows a warning without crashing",
+      lambda: len(ml_warn_msgs) == 1)
+da.QMessageBox.warning = _orig_warn_ml
+
+ml_scores: list[dict] = []
+ml_tab.score_computed.connect(lambda s: ml_scores.append(s))
+ml_tab._start_compute()
+_deadline = time.time() + 20.0
+while time.time() < _deadline and ml_tab._metrics is None:
+    pump(); time.sleep(0.05)
+
+check("_start_compute() completes and stores metrics",
+      lambda: ml_tab._metrics is not None)
+check("_start_compute() updates the accuracy metric card",
+      lambda: ml_tab._metric_vals["accuracy"].text() != "—")
+check("_start_compute() re-enables the Compute Metrics button",
+      lambda: ml_tab._compute_btn.isEnabled())
+check("_start_compute() emits score_computed signal",
+      lambda: len(ml_scores) == 1)
+check("get_metrics() returns a dict after compute",
+      lambda: isinstance(ml_tab.get_metrics(), dict))
+
+
+# ==============================================================================
+section("12  AdaptiveTrainingTab")
+# ==============================================================================
+
+adapt = da.AdaptiveTrainingTab()
+
+check("AdaptiveTrainingTab creates without crash", lambda: True)
+
+check("Feedback stat cards exist for all 4 keys",
+      lambda: set(adapt._stat_cards.keys()) == {"total", "attacks", "benign", "corr_n"})
+
+check("Auto-retrain checkbox unchecked by default",
+      lambda: not adapt._auto_retrain_cb.isChecked())
+
+check("Retrain button enabled and correctly labelled",
+      lambda: adapt._retrain_btn.isEnabled()
+              and adapt._retrain_btn.text() == "Retrain Model Now")
+
+adapt._append_log("test log line")
+check("_append_log() appends text to the log widget",
+      lambda: "test log line" in adapt._log.toPlainText())
+
+adapt._refresh_stats()
+pump()
+check("_refresh_stats() runs without crash", lambda: True)
+
+adapt._refresh_history()
+pump()
+check("_refresh_history() runs without crash", lambda: True)
+
+# _on_retrain_done — error branch (mock QMessageBox.warning; avoids a blocking dialog)
+_at_warn_msgs: list[str] = []
+_orig_warn_at = da.QMessageBox.warning
+da.QMessageBox.warning = lambda parent, title, msg, *a: _at_warn_msgs.append(msg)
+adapt._on_retrain_done({"error": "simulated failure"})
+pump()
+check("_on_retrain_done() error branch shows a warning",
+      lambda: len(_at_warn_msgs) == 1)
+check("_on_retrain_done() error branch re-enables the retrain button",
+      lambda: adapt._retrain_btn.isEnabled())
+da.QMessageBox.warning = _orig_warn_at
+
+# _on_retrain_done — no-improvement branch (mock QMessageBox.information)
+_at_info_msgs: list[str] = []
+_orig_info_at = da.QMessageBox.information
+da.QMessageBox.information = lambda parent, title, msg, *a: _at_info_msgs.append(msg)
+adapt._on_retrain_done({"improved": False, "message": "No improvement."})
+pump()
+check("_on_retrain_done() no-improvement branch shows an info dialog",
+      lambda: len(_at_info_msgs) == 1)
+da.QMessageBox.information = _orig_info_at
+
+# _clear_buffer — mock QMessageBox.question to answer "No" so real feedback data
+# on disk is left untouched, while still exercising the handler.
+_orig_q_at = da.QMessageBox.question
+da.QMessageBox.question = lambda *a, **k: da.QMessageBox.StandardButton.No
+adapt._clear_buffer()
+pump()
+check("_clear_buffer() with 'No' answer runs without crash", lambda: True)
+da.QMessageBox.question = _orig_q_at
+
+
+# ==============================================================================
+section("13  AdversarialTab")
+# ==============================================================================
+
+adv = da.AdversarialTab()
+
+check("AdversarialTab creates without crash", lambda: True)
+
+check("Attack profile dropdown populated from ATTACK_PROFILES",
+      lambda: adv._profile_cb.count() == len(da.ATTACK_PROFILES))
+
+check("Feature table populated for the initial profile",
+      lambda: adv._feat_table.rowCount() > 0)
+
+check("Attack button starts enabled with default label",
+      lambda: adv._atk_btn.isEnabled() and "Run FGSM" in adv._atk_btn.text())
+
+# Feed a synthetic successful-evasion result directly to the signal handler
+# (mirrors ToolsTab._show_prediction()'s pattern of testing the handler with
+# canned data rather than running the full ML pipeline).
+fake_success = {
+    "success": True, "original_confidence": 96.0, "final_confidence": 12.0,
+    "threshold": 50.0, "iterations": 8, "features_changed": 3,
+    "confidence_path": [96.0, 80.0, 55.0, 12.0],
+    "original_features": {"Flow Duration": 100.0},
+    "adversarial_features": {"Flow Duration": 5000.0},
+    "perturbations": {"Flow Duration": 4900.0},
+}
+adv_scores: list[dict] = []
+adv.score_updated.connect(lambda s: adv_scores.append(s))
+adv._on_attack_result(fake_success)
+pump()
+check("_on_attack_result(success) shows EVASION SUCCESSFUL",
+      lambda: "EVASION SUCCESSFUL" in adv._status_lbl.text())
+check("_on_attack_result(success) stores the last result",
+      lambda: adv._last_adv_result == fake_success)
+check("_on_attack_result(success) fills the comparison table",
+      lambda: adv._cmp_table.rowCount() == 1)
+check("_on_attack_result(success) re-enables the attack button",
+      lambda: adv._atk_btn.isEnabled())
+check("_on_attack_result(success) emits score_updated",
+      lambda: len(adv_scores) == 1)
+
+# Feed a synthetic resisted-attack result
+fake_resist = {**fake_success, "success": False, "final_confidence": 88.0,
+                "confidence_path": [96.0, 92.0, 88.0]}
+adv._on_attack_result(fake_resist)
+pump()
+check("_on_attack_result(resisted) shows ATTACK RESISTED",
+      lambda: "ATTACK RESISTED" in adv._status_lbl.text())
+
+# Feed a synthetic poisoning-demo result
+fake_poison = {
+    "profiles_tested": 3, "evasion_successes": 2, "evasion_rate": 66.0, "risk": "HIGH",
+    "per_profile": {
+        "SYN Flood": {"evaded": True,  "original_confidence": 95.0,
+                       "final_confidence": 10.0, "iterations": 5},
+        "UDP Flood": {"evaded": False, "original_confidence": 90.0,
+                       "final_confidence": 85.0, "iterations": 5},
+    },
+}
+adv._on_poison_result(fake_poison)
+pump()
+check("_on_poison_result() shows poisoning demo summary",
+      lambda: "Poisoning Demo" in adv._status_lbl.text())
+check("_on_poison_result() re-enables the poison button",
+      lambda: adv._poison_btn.isEnabled())
+
+# Error branches
+adv._on_attack_result({"error": "model unavailable"})
+pump()
+check("_on_attack_result(error) shows an error message",
+      lambda: "Error" in adv._status_lbl.text())
+
+adv._on_poison_result({"error": "model unavailable"})
+pump()
+check("_on_poison_result(error) shows an error message",
+      lambda: "Error" in adv._status_lbl.text())
+
+
+# ==============================================================================
+section("14  SettingsTab")
+# ==============================================================================
+
+_orig_settings_file = da.SETTINGS_FILE
+try:
+    _tmp_settings = Path(tempfile.mktemp(suffix=".json"))
+    da.SETTINGS_FILE = _tmp_settings
+    settings_obj = da.AppSettings()
+    settings_tab = da.SettingsTab(settings_obj)
+    pump()
+
+    check("SettingsTab creates without crash", lambda: True)
+
+    check("All 7 category buttons registered",
+          lambda: set(settings_tab._cat_btns.keys()) == {
+              "notifications", "appearance", "detection", "file_protect",
+              "performance", "whitelist", "about"})
+
+    check("Starts on the notifications page",
+          lambda: settings_tab._stack.currentIndex() == 0)
+
+    settings_tab._go("appearance")
+    pump()
+    check("_go('appearance') switches stack index",
+          lambda: settings_tab._stack.currentIndex() == 1)
+    check("_go('appearance') marks the appearance button active",
+          lambda: settings_tab._cat_btns["appearance"].property("active") == "1")
+
+    _wl_idx = [c[0] for c in settings_tab._CATS].index("whitelist")
+    settings_tab._go("whitelist")
+    pump()
+    check("_go('whitelist') switches to the whitelist page",
+          lambda: settings_tab._stack.currentIndex() == _wl_idx)
+
+    check("Whitelist starts empty",
+          lambda: settings_obj.get("whitelist", default=[]) == [])
+
+    settings_tab._wl_input.setText("10.0.0.5")
+    settings_tab._wl_add()
+    pump()
+    check("_wl_add() adds a valid IP to settings",
+          lambda: "10.0.0.5" in settings_obj.get("whitelist", default=[]))
+    check("_wl_add() clears the input field",
+          lambda: settings_tab._wl_input.text() == "")
+
+    settings_tab._wl_remove("10.0.0.5")
+    pump()
+    check("_wl_remove() removes the IP from settings",
+          lambda: "10.0.0.5" not in settings_obj.get("whitelist", default=[]))
+
+    # Invalid IP shows a warning instead of being added
+    _settings_warn_msgs: list[str] = []
+    _orig_warn_settings = da.QMessageBox.warning
+    da.QMessageBox.warning = lambda parent, title, msg, *a: _settings_warn_msgs.append(msg)
+    settings_tab._wl_input.setText("not-an-ip")
+    settings_tab._wl_add()
+    pump()
+    check("_wl_add() rejects an invalid IP with a warning",
+          lambda: len(_settings_warn_msgs) == 1
+                  and "not-an-ip" not in settings_obj.get("whitelist", default=[]))
+    da.QMessageBox.warning = _orig_warn_settings
+
+    accent_events: list[str] = []
+    settings_tab.accent_changed.connect(lambda hx: accent_events.append(hx))
+    settings_tab._apply_accent("#22c55e", settings_tab._swatch_btns[0])
+    pump()
+    check("_apply_accent() persists the accent colour to settings",
+          lambda: settings_obj.get("appearance", "accent") == "#22c55e")
+    check("_apply_accent() emits accent_changed signal",
+          lambda: accent_events == ["#22c55e"])
+
+    check("get_whitelist() reflects current settings",
+          lambda: settings_tab.get_whitelist() == settings_obj.get("whitelist", default=[]))
+except Exception as e:
+    fail("SettingsTab section", str(e))
+finally:
+    da.SETTINGS_FILE = _orig_settings_file
+
+
+# ==============================================================================
+section("15  MainWindow — navigation & signals")
 # ==============================================================================
 
 win = da.MainWindow()
@@ -578,14 +956,18 @@ pump()
 
 check("MainWindow creates without crash", lambda: True)
 
-check("All 6 tab keys registered in _pages",
-      lambda: set(win._pages.keys()) == {"overview","traffic","threats","system","blocked","tools"})
+_ALL_TAB_KEYS = {"overview","traffic","threats","system","blocked","tools",
+                  "adaptive","advlab","geomap","mlanalysis","settings","filescanner"}
 
-check("All 6 nav buttons registered in _nav_btns",
-      lambda: set(win._nav_btns.keys()) == {"overview","traffic","threats","system","blocked","tools"})
+check("All 12 tab keys registered in _pages",
+      lambda: set(win._pages.keys()) == _ALL_TAB_KEYS)
+
+check("All 12 nav buttons registered in _nav_btns",
+      lambda: set(win._nav_btns.keys()) == _ALL_TAB_KEYS)
 
 # Navigate to each tab
-for tab_name in ["overview", "traffic", "threats", "blocked", "tools"]:
+for tab_name in ["overview", "traffic", "threats", "system", "blocked", "tools",
+                  "adaptive", "advlab", "geomap", "mlanalysis", "settings", "filescanner"]:
     win._go_to(tab_name); pump()
     idx = win._pages[tab_name]
     check(f"_go_to('{tab_name}') switches to correct stack index",
@@ -664,7 +1046,7 @@ check("_stop_sniffer() stops thread without hanging",
 
 
 # ==============================================================================
-section("10  SnifferThread")
+section("16  SnifferThread")
 # ==============================================================================
 
 sn = da.SnifferThread(auto_block=False)
@@ -698,7 +1080,7 @@ check("SnifferThread stops cleanly within 3 s",
 
 
 # ==============================================================================
-section("11  Integration — full data flow")
+section("17  Integration — full data flow")
 # ==============================================================================
 
 win2 = da.MainWindow()
@@ -722,6 +1104,8 @@ check("Safe stat label > 0",
 check("Attacks stat label > 0",
       lambda: int(win2._dashboard._stat_vals["attacks"].text().replace(",","")) > 0)
 
+win2._traffic._apply()   # bypass the 250ms throttle timer to force a synchronous refresh
+pump()
 check("Traffic table has rows",
       lambda: win2._traffic.tbl.rowCount() > 0)
 
