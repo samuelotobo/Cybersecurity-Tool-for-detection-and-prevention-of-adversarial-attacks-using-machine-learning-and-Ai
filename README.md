@@ -71,6 +71,10 @@ security_monitor/
 - Python 3.10+
 - Windows 10/11 (for Windows Firewall blocking and Event Log monitoring)
 - Run as Administrator for IP blocking and packet capture
+- [Git LFS](https://git-lfs.com/) — the training datasets (`cicddos2019_dataset.csv`,
+  `Phising_dataset_predict.csv`) are tracked via Git LFS. Install it once
+  (`git lfs install`) before cloning, or run `git lfs pull` after cloning if
+  the CSVs show up as small pointer files instead of real data.
 
 ### 2. Install dependencies
 
@@ -152,8 +156,17 @@ Download [Npcap](https://npcap.com/#download) for Windows packet capture support
 
 ## Running tests
 
+Automated unit/integration tests (no admin rights, no live network, no GUI needed):
+
 ```bash
-pytest test_desktop_app.py -v
+pytest -v
+```
+
+Manual smoke-test scripts (run directly, not via pytest):
+
+```bash
+python demo_test.py              # exercises every detector with simulated in-memory events
+python test_desktop_app.py       # exercises the full PyQt6 GUI (widgets, signals, navigation)
 ```
 
 ## Detection Thresholds (rules_config.json)
