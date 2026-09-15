@@ -26,6 +26,7 @@ geo_cache.json
 network_map.html
 model_version_history.json
 model_versions/
+security_alerts.log
 logs/*.log
 
 # ── Editor / OS ────────────────────────────────────────────────────────────
