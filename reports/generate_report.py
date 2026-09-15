@@ -773,6 +773,9 @@ def build_document():
         "    adaptive_trainer.py   Feedback buffer, online SGD, retrain pipeline",
         "    flow_tracker.py       5-tuple network flow aggregation",
         "    ip_tracker.py         Per-IP heuristic scoring",
+        "    ip_blocker.py         Windows Firewall auto-block with rollback timer",
+        "    tls_inspector.py      TLS Client Hello / JA3 fingerprint inspection",
+        "    ueba.py               User behaviour analytics (off-hours/new-host)",
         "  ddos_detector_model.joblib   Trained DDoS RF model (~15 MB)",
         "  anomaly_model.joblib         Isolation Forest model (~1.6 MB)",
         "  model_metrics.json           Pre-computed performance metrics",
@@ -1143,6 +1146,7 @@ def build_document():
     bullet(doc, "Brute Force: Required a private IP filter (ipaddress.is_private()) to avoid flagging the machine's own outgoing SSH, email, and SMB connections.")
     bullet(doc, "FIM: The baseline file (fim_baseline.json) was initially inside the watched directory, causing it to alert on its own writes every 60 seconds. Fixed by adding the file to an exclusion list.")
     bullet(doc, "GeoMap Alerts: The folium unavailable warning was being emitted on every rebuild cycle (every 15 tracked IPs) rather than once. Fixed with a _folium_alerted flag.")
+    bullet(doc, "Adversarial Test Fixture: The BENIGN_PROFILE used by both the automated pytest suite and the Adversarial Lab's evasion baseline was a hand-picked feature vector that scored 98.7% attack probability under the trained classifier — a false positive in the fixture, not the model (which independently tests at 99.92% accuracy on real held-out data). Replaced with the median feature values of ~63,000 real BENIGN rows sampled from the training dataset; it now scores 0.36%. This reinforced the project's broader lesson: every \"should not alert\" fixture needs to be checked against real data, not just plausible-sounding numbers.")
 
     heading(doc, "7.2  Thread Safety in PyQt6", 2)
     body(doc, (
@@ -1177,9 +1181,14 @@ def build_document():
     body(doc, (
         "When the DDoS classifier's predict() function received features as a plain dict rather than "
         "a DataFrame, the scikit-learn StandardScaler (fitted on a DataFrame with named columns) "
-        "issued warnings and occasionally produced misaligned inputs. This was resolved by always "
-        "constructing the feature vector by iterating over the model's stored feature_names list — "
-        "ensuring consistent column order regardless of dictionary insertion order."
+        "issued warnings and occasionally produced misaligned inputs. The first fix was to always "
+        "construct the feature vector by iterating over the model's stored feature_names list, ensuring "
+        "consistent column order regardless of dictionary insertion order — but this still passed a bare "
+        "NumPy array into scaler.transform(), so scikit-learn's \"X does not have valid feature names\" "
+        "warning kept firing on every single prediction. The complete fix was to wrap the ordered values "
+        "in a one-row pandas DataFrame using the same feature_names as columns before calling transform() "
+        "— applied consistently across the DDoS detector, the anomaly detector, the adversarial engine, "
+        "and the adaptive trainer's evaluation path, eliminating the warning entirely."
     ))
 
     heading(doc, "7.6  Online Learning with SGDClassifier", 2)
@@ -1212,17 +1221,21 @@ def build_document():
         ("SIEM Integration",
          "Add export adapters for Splunk (via HEC), Elastic (via Logstash), and Microsoft Sentinel "
          "(via Azure Monitor) so the Security Monitor can feed alerts into enterprise SOC workflows."),
-        ("Automated IP Blocking with Rollback Timer",
-         "Extend the current manual IP blocking to support automatic blocking of confirmed ATTACK sources "
-         "with a configurable TTL (e.g., 60 minutes), automatically releasing the block if no further "
-         "malicious activity is detected."),
-        ("Encrypted Traffic Analysis",
-         "While payload analysis of HTTPS is not feasible, TLS metadata (JA3/JA3S fingerprints, "
-         "certificate issuer, SNI patterns, flow timing) can reveal malicious tools even through "
-         "encryption — particularly C2 frameworks and RATs."),
-        ("Mobile Companion App",
-         "A mobile dashboard (React Native or Flutter) receiving push notifications for critical alerts "
-         "would allow administrators to monitor the system remotely without requiring VPN access."),
+        ("Scheduled / Drift-Triggered Retraining",
+         "Auto IP blocking with a rollback timer and JA3 client-side TLS fingerprinting already ship "
+         "(ip_blocker.py, tls_inspector.py). What remains on that front is automating the ML side: "
+         "retraining on a schedule or on detected concept drift, rather than only when an analyst "
+         "manually triggers it from the Adaptive Training tab."),
+        ("Server-Side TLS Correlation (JA3S + Certificate Issuer)",
+         "The current TLS inspector fingerprints the client's Hello (JA3, SNI, cipher suites, version). "
+         "A natural extension is JA3S fingerprinting of the server's response and certificate-issuer/"
+         "flow-timing correlation across a session — revealing malicious C2 servers even when the "
+         "client side looks unremarkable."),
+        ("Native Mobile App with Push Notifications",
+         "The current web/mobile companion (a JWT-authenticated, mobile-responsive Flask dashboard on "
+         "the LAN) requires opening a browser and has no push notifications. A native app (React Native "
+         "or Flutter) with OS-level push for critical alerts would let administrators monitor the system "
+         "without keeping a browser tab open."),
         ("Multi-Host Deployment",
          "A central server mode that aggregates alerts from multiple Security Monitor agents running "
          "on different machines in an organisation's network, providing a network-wide threat picture."),
