@@ -132,7 +132,15 @@ python build.py --onefile
 python build.py --noinstaller
 ```
 
-Output is in `dist/SecurityMonitor/`. Launch with `SecurityMonitor.exe` (run as Administrator for full features).
+Output goes to `C:\Builds\SecurityMonitor\dist\SecurityMonitor\` (built outside the
+project folder to avoid OneDrive file-locking issues during PyInstaller's cleanup
+step). Launch with `SecurityMonitor.exe` (run as Administrator for full features).
+
+> **Note:** the packaged build (~790 MB folder / ~310 MB zip) is **not** committed to
+> this repository — it's a generated artifact, not source, and both `build/` and
+> `dist/` are excluded via `.gitignore`. Build it yourself with the commands above,
+> or grab the version distributed separately alongside this repo (e.g. a GitHub
+> Release or a direct download link, if one was provided to you).
 
 ### Windows Installer (optional)
 
