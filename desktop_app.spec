@@ -19,6 +19,10 @@ ROOT = Path(SPECPATH)
 _datas = [
     # Detector package (all Python source + any JSON inside)
     (str(ROOT / 'detectors'),            'detectors'),
+    # Web/mobile companion dashboard — desktop_app.py starts this itself on
+    # launch (port 8080); its Flask templates/static files aren't .py source
+    # so PyInstaller's import analysis won't find them on its own.
+    (str(ROOT / 'web_dashboard'),        'web_dashboard'),
     # Core config
     (str(ROOT / 'config.py'),            '.'),
     (str(ROOT / 'rules_config.json'),    '.'),
@@ -132,6 +136,17 @@ _hidden = [
     # ── cryptography (requests TLS, scapy TLS) ──────────────────────────────
     'cryptography',
     'cryptography.hazmat.primitives',
+    # ── web/mobile companion dashboard (Flask, started by desktop_app.py) ───
+    'web_dashboard',
+    'web_dashboard.app',
+    'flask',
+    'flask_cors',
+    'werkzeug',
+    'jinja2',
+    'click',
+    'itsdangerous',
+    'blinker',
+    'jwt',                      # PyJWT
 ]
 
 a = Analysis(
@@ -144,8 +159,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Web dashboard — not needed in the desktop build
-        'flask', 'werkzeug', 'jinja2', 'click', 'flask_cors',
         # Jupyter / IPython
         'notebook', 'IPython', 'ipykernel',
         # Unused backends

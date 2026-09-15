@@ -6,7 +6,12 @@
 #define AppVersion   "1.0.0"
 #define AppPublisher "Samuel Akpoghene Otobo"
 #define AppExeName   "SecurityMonitor.exe"
-#define SourceDir    "dist\SecurityMonitor"
+; build.py passes /DSourceDir=<actual PyInstaller output> since it builds
+; outside the project (C:\Builds\...) to avoid OneDrive file locks; this
+; default only applies when compiling installer.iss directly by hand.
+#ifndef SourceDir
+  #define SourceDir "dist\SecurityMonitor"
+#endif
 
 [Setup]
 AppId={{A3F2C1B0-9E4D-47A8-8F2C-D6E0B1C2A3F4}

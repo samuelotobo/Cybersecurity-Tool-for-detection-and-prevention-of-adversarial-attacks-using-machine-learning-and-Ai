@@ -36,8 +36,7 @@ ROOT    = Path(__file__).parent.resolve()
 HOOKS   = ROOT / "hooks"
 
 # Build outside OneDrive/synced folders to prevent file-locking during PyInstaller cleanup.
-# Falls back to the project root if C:\Builds is not available.
-_BUILD_BASE = Path(r"C:\Builds\SecurityMonitor") if Path("C:\\Builds").exists() or True else ROOT
+_BUILD_BASE = Path(r"C:\Builds\SecurityMonitor")
 _BUILD_BASE.mkdir(parents=True, exist_ok=True)
 DIST    = _BUILD_BASE / "dist"
 BUILD   = _BUILD_BASE / "build"
@@ -78,6 +77,9 @@ def check_deps() -> bool:
         ("requests",      "requests"),
         ("plyer",         "plyer"),
         ("qrcode",        "qrcode"),
+        ("flask",         "flask"),
+        ("flask_cors",    "flask-cors"),
+        ("jwt",           "PyJWT"),
     ]
     for import_name, install_name in checks:
         try:
@@ -190,7 +192,10 @@ def build_inno_installer() -> bool:
         )
         return False
 
-    rc = run([str(iscc), str(iss_file)])
+    # Pass the actual PyInstaller output location — it lives outside the
+    # project (C:\Builds\...) to dodge OneDrive file-locking, not at the
+    # project-relative "dist\SecurityMonitor" the .iss file defaults to.
+    rc = run([str(iscc), f"/DSourceDir={OUTDIR}", str(iss_file)])
     return rc == 0
 
 
