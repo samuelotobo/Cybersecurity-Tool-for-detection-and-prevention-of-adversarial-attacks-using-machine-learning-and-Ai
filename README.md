@@ -139,8 +139,8 @@ step). Launch with `SecurityMonitor.exe` (run as Administrator for full features
 > **Note:** the packaged build (~790 MB folder / ~310 MB zip) is **not** committed to
 > this repository — it's a generated artifact, not source, and both `build/` and
 > `dist/` are excluded via `.gitignore`. Build it yourself with the commands above,
-> or grab the version distributed separately alongside this repo (e.g. a GitHub
-> Release or a direct download link, if one was provided to you).
+> or download the prebuilt portable ZIP from
+> [Releases → v1.0.0](https://github.com/samuelotobo/Cybersecurity-Tool-for-detection-and-prevention-of-adversarial-attacks-using-machine-learning-and-Ai/releases/tag/v1.0.0).
 
 ### Windows Installer (optional)
 
