@@ -23,7 +23,8 @@
         "operator": ">",
         "value": 1500,
         "severity": "medium",
-        "enabled": true
+        "enabled": false,
+        "note": "Disabled: NIC large-send/receive offload makes normal frames exceed 1514 bytes in captures"
       },
       {
         "name": "Suspicious TTL",

@@ -2,6 +2,8 @@
 
 A professional cybersecurity desktop application that provides real-time network threat detection, system monitoring, and file integrity alerting — all in a dark-themed PyQt6 GUI.
 
+> **Just want to run it?** See [HOW_TO_RUN_AND_TEST.md](HOW_TO_RUN_AND_TEST.md) for a short step-by-step checklist.
+
 ## Features
 
 ### Network Threat Detection

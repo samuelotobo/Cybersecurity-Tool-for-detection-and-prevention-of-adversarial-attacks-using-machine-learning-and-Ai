@@ -20,6 +20,7 @@ from detectors.ddos import Alert, DDosDetector
 from detectors.email_phishing import analyze_email
 from detectors.flow_tracker import FlowTracker
 from detectors.ip_tracker import IPTracker
+from detectors.fusion import MLCorroborator, fuse_verdict
 from detectors.url_phishing import get_feature_names, predict_url
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -58,6 +59,8 @@ ip_tracker = IPTracker(
     sustained_n=config.SUSTAINED_ATTACK_N,
 )
 
+ml_gate = MLCorroborator(config.ML_ALERT_MIN_FLOWS, config.IP_WINDOW_S)
+
 # ── Shared state ──────────────────────────────────────────────────────────────
 _alerts: deque[dict] = deque(maxlen=config.MAX_ALERTS_IN_MEMORY)
 _traffic: deque[dict] = deque(maxlen=300)
@@ -91,51 +94,10 @@ def _fuse_verdict(
     anomaly_result: dict,
     rule_alerts: list[Alert],
     heuristic_alerts: list[dict],
+    corroborated: bool = True,
 ) -> str:
-    """
-    Combine signals from all three detection layers into a final status string.
-
-    Priority (highest first):
-      1. Heuristic alerts (SYN flood, port scan, sustained attack) → ATTACK
-      2. ML ATTACK confirmed by anomaly layer                       → ATTACK
-      3. ML ATTACK alone (anomaly says normal)                      → SUSPICIOUS
-      4. ML SUSPICIOUS (below threshold but above 70% of threshold) → SUSPICIOUS
-      5. Anomaly alone (ML says normal but IF flags it)             → SUSPICIOUS
-      6. Rule hit (custom rule / IP reputation)                     → rule severity
-      7. All clear                                                  → SAFE
-    """
-    ml_verdict  = ml_result.get("verdict",  "NORMAL")
-    is_anomaly  = anomaly_result.get("anomaly", False)
-    has_rules   = bool(rule_alerts)
-    has_heur    = bool(heuristic_alerts)
-
-    # Layer 1 — heuristic attacks are confirmed without needing ML
-    if has_heur:
-        return "ATTACK"
-
-    # Layer 2 — ML ATTACK confirmed by anomaly layer (both agree)
-    if ml_verdict == "ATTACK" and is_anomaly:
-        return "ATTACK"
-
-    # Layer 3 — ML ATTACK alone (anomaly doesn't agree, but RF is confident)
-    if ml_verdict == "ATTACK":
-        return "SUSPICIOUS"
-
-    # Layer 4 — ML is suspicious (below threshold but close)
-    if ml_verdict == "SUSPICIOUS":
-        return "SUSPICIOUS"
-
-    # Layer 5 — Anomaly alone (novel attack pattern RF hasn't seen before)
-    if is_anomaly:
-        return "SUSPICIOUS"
-
-    # Layer 6 — Rule hits (return the worst severity seen)
-    if has_rules:
-        severity_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-        worst = max(rule_alerts, key=lambda a: severity_rank.get(a.severity, 0))
-        return worst.severity.upper()
-
-    return "SAFE"
+    """Combine the three detection layers into a status (see detectors/fusion.py)."""
+    return fuse_verdict(ml_result, anomaly_result, rule_alerts, heuristic_alerts, corroborated)
 
 
 # ── Network sniffer ───────────────────────────────────────────────────────────
@@ -190,6 +152,9 @@ def _sniffer() -> None:
                 ml_result = ddos.predict(flow_features)
             if anomaly.ready:
                 anomaly_result = anomaly.score(flow_features)
+            if (ml_result.get("verdict") in ("ATTACK", "SUSPICIOUS")
+                    or anomaly_result.get("anomaly")):
+                ml_gate.record(ip.src, ip.dst)
 
         # ── Layer 3: per-IP heuristics ────────────────────────────────────────
         heuristic_alerts = ip_tracker.update(
@@ -202,7 +167,8 @@ def _sniffer() -> None:
         )
 
         # ── Verdict fusion ────────────────────────────────────────────────────
-        status = _fuse_verdict(ml_result, anomaly_result, rule_alerts, heuristic_alerts)
+        status = _fuse_verdict(ml_result, anomaly_result, rule_alerts, heuristic_alerts,
+                               ml_gate.is_active(ip.src, ip.dst))
 
         entry = {
             "timestamp":       datetime.now().strftime("%H:%M:%S"),

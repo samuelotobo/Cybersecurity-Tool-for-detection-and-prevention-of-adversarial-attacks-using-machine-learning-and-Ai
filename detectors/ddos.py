@@ -10,6 +10,7 @@ Three-tier verdict system:
 The decision threshold is saved alongside the model during training (F1-optimal).
 A config override (ATTACK_CONFIDENCE_THRESHOLD > 0) overrides the saved value.
 """
+import ipaddress
 import json
 import logging
 from dataclasses import asdict, dataclass, field
@@ -18,6 +19,14 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from joblib import load
+
+
+def _is_multicast_or_broadcast(ip: str) -> bool:
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return a.is_multicast or ip == "255.255.255.255"
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +171,9 @@ class DDosDetector:
         # Custom threshold rules
         for rule in self.rules.get("custom_rules", []):
             if not rule.get("enabled", True):
+                continue
+            # Multicast/broadcast (mDNS, SSDP...) is sent with TTL 1 by design
+            if rule["field"] == "TTL" and _is_multicast_or_broadcast(dst):
                 continue
             field_val = packet_info.get(rule["field"])
             if field_val is None:

@@ -17,7 +17,7 @@ class ARPMonitor:
     """
 
     _FLOOD_WINDOW    = 10   # seconds
-    _FLOOD_THRESH    = 50   # ARP packets within window before flood alert
+    _FLOOD_THRESH    = 150  # ARP packets within window before flood alert (home routers send ~5/s)
     _SPOOF_COOLDOWN  = 300  # seconds before re-alerting on same IP's MAC change
 
     def __init__(

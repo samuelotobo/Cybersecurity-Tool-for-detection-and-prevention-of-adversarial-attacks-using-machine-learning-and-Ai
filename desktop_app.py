@@ -829,21 +829,8 @@ class SnifferThread(QThread):
         except Exception:
             auto_blocker = None
 
-        def _fuse(ml, anm, rules, heurs):
-            mv = ml.get("verdict", "NORMAL")
-            ia = anm.get("anomaly", False)
-            if heurs:
-                return "ATTACK"
-            if mv == "ATTACK" and ia:
-                return "ATTACK"
-            if mv in ("ATTACK", "SUSPICIOUS"):
-                return "SUSPICIOUS" if mv == "ATTACK" else "SUSPICIOUS"
-            if ia:
-                return "SUSPICIOUS"
-            if rules:
-                rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-                return max(rules, key=lambda a: rank.get(a.severity, 0)).severity.upper()
-            return "SAFE"
+        from detectors.fusion import MLCorroborator, fuse_verdict as _fuse
+        ml_gate = MLCorroborator(config.ML_ALERT_MIN_FLOWS, config.IP_WINDOW_S)
 
         _EMIT_INTERVAL = 0.05   # emit packet_signal at most 20×/s
 
@@ -902,12 +889,16 @@ class SnifferThread(QThread):
                         ml_r = ddos_d.predict(ff)
                     if anm_d.ready:
                         anm_r = anm_d.score(ff)
+                    if (ml_r.get("verdict") in ("ATTACK", "SUSPICIOUS")
+                            or anm_r.get("anomaly")):
+                        ml_gate.record(ip_l.src, ip_l.dst)
+                corroborated = ml_gate.is_active(ip_l.src, ip_l.dst)
 
                 heur_a = ip_t.update(src_ip=ip_l.src, dst_port=dport,
                                        is_syn=syn, is_ack=ack, is_new_connection=syn,
                                        ml_verdict=ml_r.get("verdict") if ml_r else None)
 
-                status = _fuse(ml_r, anm_r, rule_a, heur_a)
+                status = _fuse(ml_r, anm_r, rule_a, heur_a, corroborated)
 
                 self._stats["total"] += 1
                 if status == "ATTACK":
@@ -951,7 +942,8 @@ class SnifferThread(QThread):
                         self._auto_block(ip_l.src, h["rule_name"])
 
                 # Emit ML attack alert — rate-limited per source IP (max 1 per 30 s)
-                if ml_r and ml_r.get("verdict") in ("ATTACK", "SUSPICIOUS") and ff:
+                if (ml_r and ml_r.get("verdict") in ("ATTACK", "SUSPICIOUS") and ff
+                        and corroborated):
                     _now = time.monotonic()
                     _src = ip_l.src
                     if _now - _ml_alert_cooldown.get(_src, 0.0) >= _ML_ALERT_COOLDOWN_S:

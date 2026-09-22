@@ -144,14 +144,14 @@ def test_arp():
     else:
         _fail("Gateway ARP hijack (critical)", f"alerts: {a3}")
 
-    # ── ARP flood (≥ 50 packets / 10 s) ──────────────────────────────────────
+    # ── ARP flood (≥ threshold packets / 10 s) ───────────────────────────────
     a4: list[dict] = []
     m4 = ARPMonitor(on_alert=a4.append)
-    for _ in range(52):
+    for _ in range(ARPMonitor._FLOOD_THRESH + 2):
         m4.process_packet(_arp(1, "10.0.0.99", "de:ad:be:ef:00:01"))
     flood = next((a for a in a4 if a.get("rule_name") == "ARP Flood"), None)
     if flood:
-        _ok("ARP flood detected (≥ 50 pkts / 10 s)", flood)
+        _ok(f"ARP flood detected (≥ {ARPMonitor._FLOOD_THRESH} pkts / 10 s)", flood)
     else:
         _fail("ARP flood detected", f"alerts seen: {[a['rule_name'] for a in a4]}")
 

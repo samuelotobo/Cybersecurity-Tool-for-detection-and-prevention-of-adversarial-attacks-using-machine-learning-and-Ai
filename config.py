@@ -77,4 +77,9 @@ IP_WINDOW_S: float            = float(os.environ.get("IP_WINDOW_S", 10.0))
 SYN_ACK_RATIO_THRESHOLD: float = float(os.environ.get("SYN_ACK_RATIO", 5.0))
 CONN_RATE_THRESHOLD: int      = int(os.environ.get("CONN_RATE", 150))
 PORT_SPREAD_THRESHOLD: int    = int(os.environ.get("PORT_SPREAD", 30))
-SUSTAINED_ATTACK_N: int       = int(os.environ.get("SUSTAINED_N", 3))
+SUSTAINED_ATTACK_N: int       = int(os.environ.get("SUSTAINED_N", 40))
+
+# ML corroboration gate: ML/anomaly verdicts only affect status/alerts once this many
+# flagged flows hit one source or destination inside IP_WINDOW_S. Measured on a real
+# home network, benign traffic peaked at 29 flagged flows/10 s; floods produce far more.
+ML_ALERT_MIN_FLOWS: int       = int(os.environ.get("ML_ALERT_MIN_FLOWS", 60))

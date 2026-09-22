@@ -110,7 +110,7 @@ class TLSInspector:
         if weak:
             self._on_alert({
                 "rule_name": "Weak TLS Ciphers",
-                "severity":  "medium",
+                "severity":  "low",   # browsers still advertise legacy suites but negotiate modern ones
                 "source_ip": src_ip,
                 "message":   (
                     f"TLS Client Hello from {src_ip} advertises "
