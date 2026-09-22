@@ -36,7 +36,6 @@ _optional = [
     ('model_version_history.json',    '.'),      # adaptive training version log
     ('corrective_layer.joblib',       '.'),      # online corrective model (if trained)
     ('Phising_dataset_predict.csv',   '.'),
-    ('.env',                          '.'),
     ('ddos.ico',                      '.'),
     ('ddos.png',                      '.'),
     ('network_map.html',              '.'),
