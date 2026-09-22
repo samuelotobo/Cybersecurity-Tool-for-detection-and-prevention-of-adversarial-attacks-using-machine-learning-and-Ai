@@ -114,7 +114,7 @@ def analyze_email(
     api_key: str = "",
     api_url: str = "",
     groq_api_key: str = "",
-    groq_model: str = "llama-3.3-70b-versatile",
+    groq_model: str = "openai/gpt-oss-120b",
 ) -> dict:
     """
     Analyse email content for phishing indicators.

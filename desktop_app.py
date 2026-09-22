@@ -4206,7 +4206,7 @@ class ToolsTab(QWidget):
                     api_key=config.GEMINI_API_KEY,
                     api_url=config.GEMINI_API_URL,
                     groq_api_key=getattr(config, "GROQ_API_KEY", ""),
-                    groq_model=getattr(config, "GROQ_MODEL", "llama-3.3-70b-versatile"),
+                    groq_model=getattr(config, "GROQ_MODEL", "openai/gpt-oss-120b"),
                 )
             except Exception as e:
                 result = {"error": str(e), "keyword_risk": "LOW",
@@ -5723,7 +5723,7 @@ class SettingsTab(QWidget):
             ("14 threat detectors", "Network · System · File · Intelligence"),
             ("Machine learning",    "RandomForest DDoS + Isolation Forest anomaly"),
             ("Free cloud lookups",  "MalwareBazaar · ip-api.com geolocation"),
-            ("AI email analysis",   "Groq llama-3.3-70b (free tier)"),
+            ("AI email analysis",   "Groq gpt-oss-120b (free tier)"),
         ]:
             row = QHBoxLayout()
             row.addWidget(_lbl(f"❆  {label}",

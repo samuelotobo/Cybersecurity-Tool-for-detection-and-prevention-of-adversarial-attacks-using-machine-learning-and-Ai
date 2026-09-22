@@ -16,9 +16,11 @@ GEMINI_API_URL: str = (
     "/models/gemini-2.0-flash:generateContent"
 )
 
-# Groq — free LLM API (llama-3.3-70b-versatile, 30 req/min free tier)
+# Groq — free LLM API. llama-3.3-70b-versatile was decommissioned by Groq;
+# openai/gpt-oss-120b is the current default. Override via .env if Groq
+# retires this one too, without needing a code change.
 GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL: str   = "llama-3.3-70b-versatile"
+GROQ_MODEL: str   = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 # File paths
 MODEL_FILENAME: str         = str(BASE_DIR / "ddos_detector_model.joblib")
