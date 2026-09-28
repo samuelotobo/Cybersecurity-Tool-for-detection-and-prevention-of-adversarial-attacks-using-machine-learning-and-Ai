@@ -1,7 +1,12 @@
 """
 generate_report.py
 Generates the full Security Monitor internship project report as a Word document.
-Run from the project root:  python reports/generate_report.py
+Run from the project root:  python report_generation_archive/generate_report.py
+
+This script lives in the archive folder (see README.txt there), but still writes
+its output to reports/, where the rest of the project expects to find it. Re-run
+after adding fresh screenshots to project_report_assets/ following a real change
+(new detector, retrained model, new tab, etc.).
 """
 
 import io, math, sys, os
@@ -11,7 +16,7 @@ from datetime import datetime
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT    = Path(__file__).parent.parent
 ASSETS  = Path(__file__).parent / "project_report_assets"
-OUT     = Path(__file__).parent / "Security_Monitor_Project_Report.docx"
+OUT     = ROOT / "reports" / "Security_Monitor_Project_Report.docx"
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 try:

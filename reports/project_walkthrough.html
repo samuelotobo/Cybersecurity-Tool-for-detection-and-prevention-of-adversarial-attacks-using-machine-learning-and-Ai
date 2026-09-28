@@ -1,0 +1,647 @@
+<title>Security Monitor Walkthrough</title>
+<meta name="description" content="A narrated, hover-to-explore tour of the Security Monitor detection pipeline, with built-in voice narration.">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#0a101c;
+    --panel:#10192a;
+    --panel-2:#152036;
+    --line:#22314c;
+    --line-soft:#1a2338;
+    --text:#dfe7f3;
+    --text-dim:#8695ad;
+    --text-faint:#57647c;
+    --accent:#4fb8ff;
+    --accent-soft:#173047;
+    --accent-glow:rgba(79,184,255,.35);
+    --safe:#34d399;
+    --safe-soft:#0f2b23;
+    --warn:#f5a623;
+    --warn-soft:#2e2410;
+    --crit:#ff5d6c;
+    --crit-soft:#331419;
+    --heur:#b98cff;
+    --heur-soft:#241a3a;
+    --radius:14px;
+    --serif-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    margin:0;
+    padding-inline:20px;
+    min-height:100%;
+    background-image:
+      radial-gradient(900px 500px at 15% -10%, rgba(79,184,255,.10), transparent 60%),
+      radial-gradient(700px 420px at 100% 0%, rgba(185,140,255,.08), transparent 55%);
+  }
+  h1,h2,h3{text-wrap:balance; margin:0}
+  ::selection{background:var(--accent-glow)}
+  a{color:var(--accent)}
+  button{font-family:inherit}
+  .wrap{max-width:1080px; margin:0 auto; padding-block:28px 40px}
+
+  /* ── Header ───────────────────────────────────────────────── */
+  .head{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    flex-wrap:wrap;
+    padding:14px 18px;
+    background:linear-gradient(180deg, var(--panel), var(--panel-2));
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    margin-bottom:22px;
+  }
+  .brand{display:flex; align-items:center; gap:12px}
+  .brand-mark{
+    width:34px; height:34px; border-radius:9px; flex:none;
+    background:radial-gradient(circle at 30% 25%, #6fc8ff, var(--accent) 60%, #1c6fa8);
+    box-shadow:0 0 0 1px rgba(255,255,255,.15) inset, 0 0 22px var(--accent-glow);
+  }
+  .brand-name{font-weight:700; font-size:16px; letter-spacing:.2px}
+  .brand-sub{font-family:var(--serif-mono); font-size:11px; color:var(--text-dim); letter-spacing:.03em}
+  .status{
+    display:flex; align-items:center; gap:8px;
+    font-family:var(--serif-mono); font-size:11.5px; color:var(--safe);
+    background:var(--safe-soft); border:1px solid rgba(52,211,153,.35);
+    padding:6px 11px; border-radius:999px; white-space:nowrap;
+  }
+  .status i{width:7px; height:7px; border-radius:50%; background:var(--safe); box-shadow:0 0 8px var(--safe); flex:none;
+    animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ── Stage ────────────────────────────────────────────────── */
+  .stage{
+    position:relative;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.02), transparent 140px),
+      var(--panel);
+    overflow:hidden;
+    min-height:430px;
+    display:flex; flex-direction:column;
+  }
+  .stage::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image:linear-gradient(var(--line-soft) 1px, transparent 1px), linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size:34px 34px;
+    opacity:.35;
+    mask-image:radial-gradient(600px 380px at 50% 40%, #000, transparent 85%);
+    pointer-events:none;
+  }
+  .scene{ position:relative; z-index:1; flex:1; display:flex; flex-direction:column; padding:30px 30px 22px; }
+  .kicker{
+    font-family:var(--serif-mono); font-size:11.5px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  .kicker .n{color:var(--text-faint)}
+  .scene h2{font-size:clamp(21px,3vw,28px); font-weight:700; margin-bottom:10px}
+  .caption{
+    font-size:15px; line-height:1.62; color:var(--text-dim); max-width:62ch; margin-bottom:20px;
+  }
+  .caption b{color:var(--text); font-weight:600}
+  .caption code{font-family:var(--serif-mono); font-size:.92em; color:var(--accent); background:var(--accent-soft); padding:.05em .35em; border-radius:5px}
+
+  /* ── Hero scene ───────────────────────────────────────────── */
+  .hero{flex:1; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; gap:14px}
+  .hero-title{font-size:clamp(30px,5vw,46px); font-weight:700; letter-spacing:-.01em}
+  .hero-title span{color:var(--accent)}
+  .hero-tags{display:flex; gap:8px; flex-wrap:wrap}
+  .tag{
+    font-family:var(--serif-mono); font-size:11px; padding:5px 10px; border-radius:999px;
+    border:1px solid var(--line); color:var(--text-dim); background:rgba(255,255,255,.02);
+  }
+
+  /* ── Pipeline scene ───────────────────────────────────────── */
+  .pipe-wrap{position:relative; flex:1; display:flex; align-items:center; justify-content:center; min-height:190px}
+  .pipe{width:100%; max-width:900px; overflow:visible}
+  .node{cursor:pointer}
+  .node rect{
+    fill:var(--panel-2); stroke:var(--line); stroke-width:1.3;
+    transition:filter .25s ease, stroke .25s ease, transform .25s ease;
+    transform-origin:center;
+  }
+  .node text{font-family:var(--serif-mono); fill:var(--text-dim); transition:fill .25s ease}
+  .node .t-main{font-size:12.5px; font-weight:600}
+  .node .t-sub{font-size:9.5px}
+  .node.active rect{stroke:var(--accent); filter:drop-shadow(0 0 10px var(--accent-glow)); transform:scale(1.035)}
+  .node.active text{fill:var(--text)}
+  .node.active .t-main{fill:var(--accent)}
+  .node:hover rect{stroke:var(--accent)}
+  .edge{stroke:var(--line); stroke-width:1.3; fill:none}
+  .edge.lit{stroke:var(--accent); opacity:.55}
+  .dot{fill:var(--accent); filter:drop-shadow(0 0 4px var(--accent-glow))}
+  @media (prefers-reduced-motion: no-preference){
+    .dot{ animation: flow 2.6s linear infinite; }
+  }
+  .lane-rules .dot{animation-delay:0s}
+  .lane-ml .dot{animation-delay:.15s}
+  .lane-heur .dot{animation-delay:.3s}
+
+  .node-tip{
+    position:absolute; z-index:5; max-width:250px;
+    background:#0d1524; border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; font-size:12.5px; line-height:1.5; color:var(--text-dim);
+    box-shadow:0 12px 30px rgba(0,0,0,.45);
+    opacity:0; transform:translateY(4px); pointer-events:none; transition:opacity .15s ease, transform .15s ease;
+  }
+  .node-tip.show{opacity:1; transform:translateY(0)}
+  .node-tip b{display:block; color:var(--text); font-family:var(--serif-mono); font-size:11.5px; margin-bottom:4px; letter-spacing:.02em}
+
+  /* ── Card grid scenes ─────────────────────────────────────── */
+  .grid{display:grid; gap:10px; flex:1; align-content:start}
+  .grid.g4{grid-template-columns:repeat(4,1fr)}
+  .grid.g5{grid-template-columns:repeat(5,1fr)}
+  .card{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:11px;
+    padding:13px 14px; cursor:default; transition:border-color .2s ease, transform .2s ease;
+  }
+  .card:hover{border-color:var(--accent); transform:translateY(-2px)}
+  .card .ico{width:26px; height:26px; border-radius:7px; margin-bottom:9px; display:flex; align-items:center; justify-content:center; font-family:var(--serif-mono); font-size:11px; font-weight:700}
+  .card h4{font-size:13px; margin:0 0 4px}
+  .card p{font-size:11.5px; color:var(--text-dim); margin:0; line-height:1.45}
+  .card .metric{font-family:var(--serif-mono); font-size:22px; font-weight:600; color:var(--text); margin:2px 0 4px}
+
+  .chip-row{display:flex; flex-wrap:wrap; gap:7px; flex:1; align-content:flex-start}
+  .chip{
+    font-family:var(--serif-mono); font-size:11.5px; padding:6px 11px; border-radius:8px;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text-dim);
+    transition:border-color .15s ease, color .15s ease;
+  }
+  .chip:hover{border-color:var(--accent); color:var(--text)}
+  .chip.net{border-left:3px solid var(--accent)}
+  .chip.host{border-left:3px solid var(--heur)}
+  .chip.intel{border-left:3px solid var(--warn)}
+  .chip.content{border-left:3px solid var(--safe)}
+
+  .tabs-mock{display:grid; grid-template-columns:1fr; gap:6px; max-width:230px}
+  .tabs-mock .grp{font-family:var(--serif-mono); font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; margin:8px 0 2px}
+  .tabs-mock .item{font-size:12.5px; padding:6px 9px; border-radius:7px; color:var(--text-dim); background:transparent}
+  .tabs-mock .item.on{background:var(--accent-soft); color:var(--accent); font-weight:600}
+
+  .sim-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; flex:1; align-content:start}
+  .sim-card{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:11px; padding:13px 14px;
+    display:flex; flex-direction:column; gap:7px; transition:border-color .2s ease, transform .2s ease;
+  }
+  .sim-card:hover{transform:translateY(-2px)}
+  .sim-top{display:flex; align-items:center; gap:9px}
+  .sim-ico{font-size:16px; line-height:1}
+  .sim-name{font-size:12.5px; font-weight:600; color:var(--text); flex:1}
+  .sev{font-family:var(--serif-mono); font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; padding:3px 7px; border-radius:999px; flex:none}
+  .sev.critical{color:var(--crit); background:var(--crit-soft); border:1px solid rgba(255,93,108,.35)}
+  .sev.high{color:var(--warn); background:var(--warn-soft); border:1px solid rgba(245,166,35,.35)}
+  .sim-msg{font-family:var(--serif-mono); font-size:10.5px; color:var(--text-dim); line-height:1.5; background:rgba(0,0,0,.16); border-radius:7px; padding:8px 9px}
+  .sim-why{font-size:11px; color:var(--text-faint); line-height:1.45}
+  .sim-card.critical{border-left:3px solid var(--crit)}
+  .sim-card.high{border-left:3px solid var(--warn)}
+  .sim-foot{grid-column:1/-1; font-size:11.5px; color:var(--text-dim); margin-top:2px}
+
+  .ship-row{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; flex:1; align-content:start}
+  .ship{background:var(--panel-2); border:1px solid var(--line); border-radius:12px; padding:16px}
+  .ship h4{font-size:13.5px; margin-bottom:5px}
+  .ship p{font-size:12px; color:var(--text-dim); line-height:1.5; margin:0}
+  .ship .k{font-family:var(--serif-mono); font-size:10px; color:var(--accent); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; display:block}
+
+  /* ── Transport bar ────────────────────────────────────────── */
+  .transport{
+    border-top:1px solid var(--line);
+    background:rgba(0,0,0,.18);
+    padding:12px 18px;
+    display:flex; align-items:center; gap:14px;
+    flex-wrap:wrap;
+  }
+  .tbtn{
+    width:34px; height:34px; border-radius:9px; border:1px solid var(--line); background:var(--panel-2);
+    color:var(--text); display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .tbtn:hover{border-color:var(--accent)}
+  .tbtn:focus-visible, .chip:focus-visible, .node:focus-visible, .card:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  #playBtn{width:40px; height:40px; background:var(--accent); border-color:var(--accent); color:#04101c}
+  #playBtn:hover{filter:brightness(1.08)}
+  .track{flex:1; display:flex; align-items:center; gap:6px; min-width:160px}
+  .mark{
+    flex:1; height:6px; border-radius:3px; background:var(--line); cursor:pointer; position:relative; overflow:hidden;
+  }
+  .mark i{position:absolute; inset:0; width:0%; background:var(--accent); border-radius:3px; transition:width .12s linear}
+  .mark.done i{width:100%}
+  .counter{font-family:var(--serif-mono); font-size:11.5px; color:var(--text-dim); white-space:nowrap; font-variant-numeric:tabular-nums}
+  .hint{font-family:var(--serif-mono); font-size:10.5px; color:var(--text-faint); white-space:nowrap}
+
+  /* ── Chapter list ─────────────────────────────────────────── */
+  .chlist{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:14px}
+  .chitem{
+    text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:10px 11px; cursor:pointer; color:var(--text-dim);
+  }
+  .chitem b{display:block; font-size:12px; color:var(--text); margin-bottom:2px}
+  .chitem span{font-family:var(--serif-mono); font-size:10px; color:var(--text-faint)}
+  .chitem.on{border-color:var(--accent); background:var(--accent-soft)}
+  .chitem.on b{color:var(--accent)}
+  .chitem:hover{border-color:var(--accent)}
+
+  .foot{margin-top:16px; font-size:11.5px; color:var(--text-faint); text-align:center}
+
+  @media (max-width:720px){
+    .grid.g4, .grid.g5{grid-template-columns:repeat(2,1fr)}
+    .chlist{grid-template-columns:repeat(2,1fr)}
+    .ship-row, .sim-grid{grid-template-columns:1fr}
+    .scene{padding:22px 16px 18px}
+  }
+  [hidden]{display:none!important}
+</style>
+
+<div class="wrap">
+
+  <header class="head">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <div class="brand-name">Security Monitor</div>
+        <div class="brand-sub">NARRATED WALKTHROUGH</div>
+      </div>
+    </div>
+    <div class="status"><i></i>SYSTEM OPERATIONAL &nbsp;·&nbsp; 20 DETECTORS &nbsp;·&nbsp; 3-LAYER FUSION</div>
+  </header>
+
+  <div class="stage">
+    <div class="scene" id="scene"></div>
+
+    <div class="transport">
+      <button class="tbtn" id="prevBtn" title="Previous (←)" aria-label="Previous chapter">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 4v16M18 12 6 4v16l12-8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="tbtn" id="playBtn" title="Play / Pause (space)" aria-label="Play">
+        <svg id="playIcon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8V4z"/></svg>
+        <svg id="pauseIcon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>
+      </button>
+      <button class="tbtn" id="nextBtn" title="Next (→)" aria-label="Next chapter">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 4v16M6 12l12-8v16l-12-8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="tbtn" id="muteBtn" title="Mute narration" aria-label="Mute narration">
+        <svg id="volIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9v6h4l5 4V5L8 9H4z" stroke-linejoin="round" fill="currentColor" stroke="none"/><path d="M16 9a3.5 3.5 0 0 1 0 6" stroke-linecap="round"/><path d="M18.5 6.5a7 7 0 0 1 0 11" stroke-linecap="round"/></svg>
+        <svg id="muteIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" hidden><path d="M4 9v6h4l5 4V5L8 9H4z" stroke-linejoin="round" fill="currentColor" stroke="none"/><path d="M16 9l4 4m0-4-4 4" stroke-linecap="round"/></svg>
+      </button>
+      <div class="track">
+        <div class="mark" data-i="0"><i></i></div>
+        <div class="mark" data-i="1"><i></i></div>
+        <div class="mark" data-i="2"><i></i></div>
+        <div class="mark" data-i="3"><i></i></div>
+        <div class="mark" data-i="4"><i></i></div>
+        <div class="mark" data-i="5"><i></i></div>
+        <div class="mark" data-i="6"><i></i></div>
+        <div class="mark" data-i="7"><i></i></div>
+        <div class="mark" data-i="8"><i></i></div>
+      </div>
+      <div class="counter" id="counter">01 / 09</div>
+      <div class="hint" id="hint">hover diagram to explore · space to play</div>
+    </div>
+  </div>
+
+  <div class="chlist" id="chlist"></div>
+
+  <div class="foot">Voice narration uses your browser's built-in speech engine — no audio file, nothing recorded. Pause and hover any node to explore at your own pace.</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var scenes = [
+    { kicker:"01 · OVERVIEW", title:"Security Monitor", type:"hero",
+      caption:"A real-time cybersecurity desktop application. It watches live network traffic, host activity, and files, and decides — in milliseconds — whether what it's seeing is <b>safe</b>, <b>suspicious</b>, or an <b>attack</b>.",
+      narrate:"Security Monitor is a real-time cybersecurity desktop application. It watches live network traffic, host activity, and files, and decides in milliseconds whether what it's seeing is safe, suspicious, or an attack.",
+      tags:["PyQt6 desktop app","Flask web dashboard","Windows · Linux · macOS"] },
+
+    { kicker:"02 · THE HARD QUESTION", title:"Built to be attacked", type:"hero",
+      caption:"Most intrusion-detection demos train a model once and call it finished. This project asks the harder question: what happens when the model is <b>wrong on real traffic</b> — or when an attacker tries to <b>fool it on purpose</b>? Every layer from here on is built to answer that.",
+      narrate:"Most intrusion detection demos train a model once and call it finished. This project asks a harder question: what happens when the model is wrong on real traffic, or when an attacker tries to fool it on purpose? Every layer from here on is built to answer that.",
+      tags:["Adversarial-robustness testing","False-positive engineering"] },
+
+    { kicker:"03 · PIPELINE", title:"Capture & flow tracking", type:"pipe", active:["cap","flow"], lit:["e-cap-flow"],
+      caption:"Every packet is captured live from the network adapter with <code>Scapy</code> and <code>Npcap</code>. A flow tracker groups packets into flows using the same 19 features CICFlowMeter computes — duration, packet and byte counts, inter-arrival times, TCP flags — the exact schema the CICDDoS2019 training set uses.",
+      narrate:"Every packet is captured live from the network adapter with Scapy and Npcap. A flow tracker groups packets into flows, using the same nineteen features CICFlowMeter computes — duration, packet and byte counts, inter-arrival times, TCP flags — the exact schema the training dataset uses." },
+
+    { kicker:"04 · PIPELINE", title:"Three detection layers, at once", type:"pipe", active:["flow","rules","ml","heur"], lit:["e-flow-rules","e-flow-ml","e-flow-heur"],
+      caption:"Each flow is scored three independent ways. A <b>rule engine</b> checks simple thresholds. A <b>machine-learning layer</b> runs a calibrated Random-Forest DDoS classifier beside an Isolation Forest anomaly detector. A <b>heuristics tracker</b> watches each IP over time — SYN/ACK ratios, connection rates, port spread, sustained attack streaks.",
+      narrate:"Each flow is scored three independent ways, at the same time. A rule engine checks simple thresholds — SYN floods, port scans, oversized packets. A machine-learning layer runs a calibrated Random Forest DDoS classifier beside an Isolation Forest anomaly detector. And a per-I-P heuristics tracker watches behavior over time — SYN to ACK ratios, connection rates, port spread, sustained attack streaks." },
+
+    { kicker:"05 · PIPELINE · THE FIX", title:"The ML corroboration gate", type:"pipe", active:["rules","ml","heur","gate"], lit:["e-rules-gate","e-ml-gate","e-heur-gate"],
+      caption:"Trained on lab-generated traffic, the ML layer alone flags <b>almost every real flow</b> on an ordinary home network — a serious false-positive problem, measured directly against live traffic. The fix: a <b>corroboration gate</b>. A single flagged flow proves nothing; ML and anomaly verdicts are only trusted once a burst of flagged flows hits one host inside a ten-second window. Rule and heuristic detections are <b>never gated</b> — real attacks are still caught instantly.",
+      narrate:"Trained on lab-generated traffic, the ML layer alone flags almost every real flow on an ordinary home network — a serious false positive problem, measured directly against live traffic. The fix is a corroboration gate: a single flagged flow proves nothing, so ML and anomaly verdicts are only trusted once a burst of flagged flows hits one host inside a ten second window. Rule and heuristic detections are never gated, so real attacks are still caught instantly." },
+
+    { kicker:"06 · AI LAB", title:"Attacking its own model", type:"aiscore",
+      caption:"The <b>Adversarial Lab</b> generates evasion traffic designed to slip past the classifier, and scores the result as a composite <b>AI Security Score</b> across four axes. <b>Adaptive Training</b> then lets the model retrain on new data online, with a full version history to roll back to.",
+      narrate:"The Adversarial Lab generates evasion traffic designed to slip past the classifier, and scores the result as a composite A-I Security Score across four axes. Adaptive Training then lets the model retrain on new data online, with a full version history to roll back to." },
+
+    { kicker:"07 · COVERAGE", title:"Twenty detectors, twelve tabs", type:"roster",
+      caption:"Beyond DDoS: ARP spoofing, DNS tunneling, brute-force and credential stuffing, TLS / JA3 fingerprinting, a vulnerability scanner, Windows Event Log and file-integrity monitoring, user-behavior analytics, IP-reputation threat intel, geo-mapping, and AI-assisted email and URL phishing — all visible across a twelve-tab dashboard.",
+      narrate:"Beyond DDoS, there's ARP spoofing, DNS tunneling, brute force and credential stuffing, TLS and JA3 fingerprinting, a vulnerability scanner, Windows Event Log and file integrity monitoring, user behavior analytics, I-P reputation threat intel, geo mapping, and A-I assisted email and U-R-L phishing detection. Twenty detectors in total, all visible across a twelve tab dashboard." },
+
+    { kicker:"08 · SIMULATIONS", title:"See every detector fire, safely", type:"sim",
+      caption:"Each of the 20 detectors ships with a <b>realistic simulated trigger</b> — no real attack, no admin rights, no live network needed. One click on the <code>Test &amp; Analyse</code> tab injects a fabricated-but-faithful alert straight into the live dashboard, complete with the plain-language reason it matters. The same scenarios run headless and self-graded via <code>demo_test.py</code> — a full pass/fail report across every detector in seconds.",
+      narrate:"Each of the twenty detectors ships with a realistic simulated trigger — no real attack, no admin rights, no live network needed. One click on the Test and Analyse tab injects a fabricated but faithful alert straight into the live dashboard, complete with the plain language reason it matters. The same scenarios also run headless and self-graded through a script called demo underscore test — a full pass, fail report across every detector in seconds." },
+
+    { kicker:"09 · SHIP IT", title:"Three ways to run it", type:"ship",
+      caption:"From source for development, as a packaged standalone Windows executable for real-world deployment, or headless as a Flask web dashboard reachable from any device on the network.",
+      narrate:"It runs from source for development, as a packaged standalone Windows executable for real world deployment, or headless as a Flask web dashboard reachable from any device on the network. Built, tested, and packaged end to end." }
+  ];
+
+  var nodeMeta = {
+    cap:  { x:40,  label:"CAPTURE", sub:"Scapy · Npcap", tip:{ t:"Live packet capture", d:"Raw L2/L3/L4 capture from the network adapter via Scapy over the Npcap driver — every IP and ARP packet on the wire." } },
+    flow: { x:190, label:"FLOW TRACKER", sub:"19 features", tip:{ t:"Flow aggregation", d:"Groups packets into flows and computes the 19 CICFlowMeter-style features the ML model was trained on — duration, byte/packet counts, IATs, TCP flags." } },
+    rules:{ x:360, y:-46, label:"RULES", sub:"thresholds", lane:"lane-rules", tip:{ t:"Rule engine", d:"Fast per-packet thresholds — SYN floods, port scans, low-TTL spoofing, IP reputation — tuned against real traffic to avoid false alarms." } },
+    ml:   { x:360, y:0,   label:"ML MODELS", sub:"RF + Isolation Forest", lane:"lane-ml", tip:{ t:"Machine learning", d:"A calibrated Random-Forest DDoS classifier with an F1-optimal decision threshold, plus an Isolation Forest that flags anomalies the model has never seen." } },
+    heur: { x:360, y:46,  label:"HEURISTICS", sub:"per-IP behavior", lane:"lane-heur", tip:{ t:"Per-IP heuristics", d:"Tracks each source IP over a sliding window — SYN/ACK ratio, connection rate, port spread, and sustained-attack streaks." } },
+    gate: { x:560, label:"FUSION GATE", sub:"corroboration", tip:{ t:"ML corroboration gate", d:"ML and anomaly verdicts only count once a burst of flagged flows — the measured benign peak was 29/10s — hits one host. Rules and heuristics are never gated." } },
+    out:  { x:720, label:"ALERTS", sub:"dashboard · firewall", tip:{ t:"Response", d:"Fused verdicts drive the live dashboard, tray notifications, geo map, and — for critical severity — an automatic Windows Firewall IP block." } }
+  };
+  var nodeOrder = ["cap","flow","rules","ml","heur","gate","out"];
+
+  var i = 0, playing = false, muted = false, utter = null, fallbackTimer = null, voice = null;
+
+  var sceneEl = document.getElementById("scene");
+  var counterEl = document.getElementById("counter");
+  var hintEl = document.getElementById("hint");
+  var chlistEl = document.getElementById("chlist");
+  var marks = Array.prototype.slice.call(document.querySelectorAll(".mark"));
+  var playBtn = document.getElementById("playBtn");
+  var playIcon = document.getElementById("playIcon"), pauseIcon = document.getElementById("pauseIcon");
+  var volIcon = document.getElementById("volIcon"), muteIcon = document.getElementById("muteIcon");
+
+  function pickVoice(){
+    var vs = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
+    if(!vs.length) return null;
+    return vs.find(function(v){return /en-US|en_US/i.test(v.lang) && /Google|Natural|Online/i.test(v.name);})
+      || vs.find(function(v){return /^en/i.test(v.lang);})
+      || vs[0];
+  }
+  if(window.speechSynthesis){
+    voice = pickVoice();
+    speechSynthesis.onvoiceschanged = function(){ voice = pickVoice(); };
+  }
+
+  function wordDelayMs(text){ return Math.max(1800, text.split(/\s+/).length / 2.6 * 1000); }
+
+  function speak(text){
+    stopSpeak();
+    if(muted) return;
+    if(!window.speechSynthesis){
+      fallbackTimer = setTimeout(advanceIfPlaying, wordDelayMs(text));
+      return;
+    }
+    utter = new SpeechSynthesisUtterance(text);
+    if(voice) utter.voice = voice;
+    utter.rate = 0.98; utter.pitch = 1;
+    utter.onend = advanceIfPlaying;
+    utter.onerror = advanceIfPlaying;
+    speechSynthesis.speak(utter);
+  }
+  function stopSpeak(){
+    if(fallbackTimer){ clearTimeout(fallbackTimer); fallbackTimer = null; }
+    if(window.speechSynthesis) speechSynthesis.cancel();
+    utter = null;
+  }
+  function advanceIfPlaying(){
+    if(!playing) return;
+    if(i < scenes.length - 1){ goTo(i + 1, true); }
+    else { setPlaying(false); }
+  }
+
+  function pipeSVG(activeSet){
+    activeSet = activeSet || [];
+    function isOn(k){ return activeSet.indexOf(k) >= 0; }
+    var nodesHTML = nodeOrder.map(function(k){
+      var m = nodeMeta[k];
+      var y = 100 + (m.y || 0);
+      var w = k === "flow" || k === "gate" ? 118 : 104, h = 44;
+      return '<g class="node'+(isOn(k)?' active':'')+'" data-node="'+k+'" tabindex="0" transform="translate('+(m.x - w/2)+','+(y - h/2)+')">'
+        + '<rect width="'+w+'" height="'+h+'" rx="10"></rect>'
+        + '<text class="t-main" x="'+(w/2)+'" y="19" text-anchor="middle">'+m.label+'</text>'
+        + '<text class="t-sub" x="'+(w/2)+'" y="32" text-anchor="middle" fill-opacity=".8">'+m.sub+'</text>'
+        + '</g>';
+    }).join("");
+
+    var edges = [
+      edge("e-cap-flow", nodeMeta.cap.x+52, 100, nodeMeta.flow.x-59, 100),
+      edge("e-flow-rules", nodeMeta.flow.x+59, 100, nodeMeta.rules.x-52, 100+nodeMeta.rules.y),
+      edge("e-flow-ml",    nodeMeta.flow.x+59, 100, nodeMeta.ml.x-52,    100+nodeMeta.ml.y),
+      edge("e-flow-heur",  nodeMeta.flow.x+59, 100, nodeMeta.heur.x-52,  100+nodeMeta.heur.y),
+      edge("e-rules-gate", nodeMeta.rules.x+52, 100+nodeMeta.rules.y, nodeMeta.gate.x-59, 100),
+      edge("e-ml-gate",    nodeMeta.ml.x+52,    100+nodeMeta.ml.y,    nodeMeta.gate.x-59, 100),
+      edge("e-heur-gate",  nodeMeta.heur.x+52,  100+nodeMeta.heur.y,  nodeMeta.gate.x-59, 100),
+      edge("e-gate-out",   nodeMeta.gate.x+59, 100, nodeMeta.out.x-52, 100)
+    ].join("");
+
+    var dots = ["lane-rules","lane-ml","lane-heur"].map(function(cls, idx){
+      var m = idx===0?nodeMeta.rules:idx===1?nodeMeta.ml:nodeMeta.heur;
+      return '<g class="'+cls+'"><circle class="dot" r="3" cx="'+(nodeMeta.flow.x+60)+'" cy="'+(100+m.y)+'"></circle></g>';
+    }).join("");
+
+    return '<svg class="pipe" viewBox="0 0 800 200" role="img" aria-label="Detection pipeline diagram">'
+      + '<defs></defs>' + edges + dots + nodesHTML + '</svg>';
+
+    function edge(id, x1,y1,x2,y2){
+      var lit = "";
+      return '<path class="edge" id="'+id+'" d="M'+x1+' '+y1+' L'+x2+' '+y2+'"></path>';
+    }
+  }
+
+  var aiAxes = [
+    {k:"DET", name:"Detection rate", val:"98.6%", c:"var(--safe)", bg:"var(--safe-soft)", d:"Share of injected attack flows the fused pipeline correctly flags as ATTACK."},
+    {k:"FP", name:"Low false-positive", val:"29/10s", c:"var(--accent)", bg:"var(--accent-soft)", d:"Measured benign ceiling from real traffic — the corroboration gate's threshold."},
+    {k:"CONF", name:"Confidence", val:"calibrated", c:"var(--warn)", bg:"var(--warn-soft)", d:"Platt-scaled probabilities, so a 90% score means 90% — not a raw, overconfident logit."},
+    {k:"ROB", name:"Robustness", val:"vs. evasion", c:"var(--heur)", bg:"var(--heur-soft)", d:"Score under the Adversarial Lab's evasion traffic, designed to slip past the classifier."}
+  ];
+
+  var rosterGroups = [
+    {cls:"net", label:"Network", items:["DDoS / Traffic","ARP Spoofing","DNS Anomaly","Brute Force","TLS / JA3","Vuln Scanner"]},
+    {cls:"host", label:"Host", items:["Event Log","File Integrity","UEBA"]},
+    {cls:"intel", label:"Intelligence", items:["Threat Intel","Geo Mapper","IP Blocker"]},
+    {cls:"content", label:"Content", items:["Email Phishing (LLM)","URL Phishing (ML)","Cookie Detector"]}
+  ];
+  var tabGroups = [
+    {grp:"Monitor", items:["Overview","Live Traffic","Threats & Alerts","System Monitor","Geo Map"]},
+    {grp:"Protection", items:["Blocked IPs","File Scanner"]},
+    {grp:"Tools", items:["Test & Analyse"]},
+    {grp:"AI Lab", items:["ML Analysis","Adaptive Training","Adversarial Lab","Settings"]}
+  ];
+
+  var simCards = [
+    {ico:"🔗", name:"ARP Spoofing — Gateway!", sev:"critical", ip:"192.168.1.1",
+      msg:"ARP cache poisoning: 192.168.1.1 changed MAC from aa:bb:cc:dd:ee:ff to 11:22:33:44:55:66 [GATEWAY HIJACK]",
+      why:"Attacker reroutes all traffic through their machine to eavesdrop — a man-in-the-middle."},
+    {ico:"🔑", name:"Password Spray", sev:"critical", ip:"198.51.100.7",
+      msg:"198.51.100.7 targeting 4 services simultaneously — SSH, RDP, FTP, SMB",
+      why:"Low-and-slow guessing across many accounts, built to dodge lockout thresholds."},
+    {ico:"🔐", name:"Malicious TLS — JA3", sev:"critical", ip:"185.220.101.5",
+      msg:"JA3 fingerprint matches Cobalt Strike beacon (72a589da5868…) from 185.220.101.5",
+      why:"TLS fingerprint of a known post-exploitation C2 tool — an active attacker, not just a scan."},
+    {ico:"👤", name:"UEBA — Off-Hours Login", sev:"high", ip:"WORKSTATION-55",
+      msg:"user 'jsmith' logged in at 02:47 — outside the 07:00–20:00 baseline",
+      why:"Unusual-hours login: a strong signal of stolen credentials or an insider."},
+    {ico:"🪟", name:"Log Cleared", sev:"critical", ip:"DESKTOP-ABC",
+      msg:"Windows Security audit log CLEARED by 'Administrator'",
+      why:"Attackers wipe event logs to erase evidence right after a breach."},
+    {ico:"🚫", name:"IP Auto-Blocked", sev:"high", ip:"203.0.113.99",
+      msg:"203.0.113.99 blocked via Windows Firewall (in+out) — reason: Brute Force — TTL 60 min",
+      why:"The response side: fusion verdict to an actual firewall rule, automatically."}
+  ];
+
+  var shipCards = [
+    {k:"SOURCE", h:"Run from source", p:"python desktop_app.py — full control, live-reload while developing detectors."},
+    {k:"PACKAGED", h:"Standalone .exe", p:"PyInstaller build — no Python required, double-click to run on any Windows machine."},
+    {k:"HEADLESS", h:"Web dashboard", p:"Flask server on :8080 — monitor from a phone or another PC on the network."}
+  ];
+
+  function render(idx){
+    var s = scenes[idx];
+    var html = '<div class="kicker"><span>'+s.kicker+'</span></div><h2>'+s.title+'</h2><div class="caption">'+s.caption+'</div>';
+
+    if(s.type === "hero"){
+      html = '<div class="hero"><div class="kicker">'+s.kicker+'</div>'
+        + '<div class="hero-title">'+s.title.replace(/Security Monitor/,'Security <span>Monitor</span>')+'</div>'
+        + '<div class="caption">'+s.caption+'</div>'
+        + '<div class="hero-tags">'+ (s.tags||[]).map(function(t){return '<span class="tag">'+t+'</span>';}).join("") +'</div>'
+        + '</div>';
+    } else if(s.type === "pipe"){
+      html += '<div class="pipe-wrap">'+pipeSVG(s.active)+'<div class="node-tip" id="nodeTip"></div></div>';
+    } else if(s.type === "aiscore"){
+      html += '<div class="grid g4">' + aiAxes.map(function(a){
+        return '<div class="card" tabindex="0" data-speak="'+escAttr(a.name+'. '+a.d)+'">'
+          + '<div class="ico" style="background:'+a.bg+'; color:'+a.c+'">'+a.k+'</div>'
+          + '<div class="metric">'+a.val+'</div><h4>'+a.name+'</h4><p>'+a.d+'</p></div>';
+      }).join("") + '</div>';
+    } else if(s.type === "roster"){
+      html += '<div style="display:flex; gap:26px; flex-wrap:wrap; flex:1">'
+        + '<div class="chip-row" style="flex:2; min-width:280px">' + rosterGroups.map(function(g){
+            return g.items.map(function(it){ return '<span class="chip '+g.cls+'" title="'+g.label+'">'+it+'</span>'; }).join("");
+          }).join("") + '</div>'
+        + '<div class="tabs-mock">' + tabGroups.map(function(g,gi){
+            return '<div class="grp">'+g.grp+'</div>' + g.items.map(function(it,ii){
+              return '<div class="item'+(gi===0&&ii===0?' on':'')+'">'+it+'</div>';
+            }).join("");
+          }).join("") + '</div>'
+        + '</div>';
+    } else if(s.type === "sim"){
+      html += '<div class="sim-grid">' + simCards.map(function(c){
+        return '<div class="sim-card '+c.sev+'">'
+          + '<div class="sim-top"><span class="sim-ico">'+c.ico+'</span><span class="sim-name">'+c.name+'</span><span class="sev '+c.sev+'">'+c.sev+'</span></div>'
+          + '<div class="sim-msg">'+c.msg+'</div>'
+          + '<div class="sim-why">'+c.why+'</div>'
+          + '</div>';
+      }).join("") + '<div class="sim-foot">6 of 20 — every detector has one of these, one click away.</div></div>';
+    } else if(s.type === "ship"){
+      html += '<div class="ship-row">' + shipCards.map(function(c){
+        return '<div class="ship"><span class="k">'+c.k+'</span><h4>'+c.h+'</h4><p>'+c.p+'</p></div>';
+      }).join("") + '</div>';
+    }
+
+    sceneEl.innerHTML = html;
+    wireInteractives(s);
+  }
+
+  function escAttr(str){ return String(str).replace(/"/g,'&quot;'); }
+
+  function wireInteractives(s){
+    var tip = document.getElementById("nodeTip");
+    if(s.type === "pipe"){
+      var svg = sceneEl.querySelector(".pipe");
+      var lit = s.lit || [];
+      lit.forEach(function(id){
+        var e = sceneEl.querySelector("#"+id);
+        if(e) e.classList.add("lit");
+      });
+      Array.prototype.forEach.call(sceneEl.querySelectorAll(".node"), function(n){
+        var key = n.getAttribute("data-node");
+        var meta = nodeMeta[key];
+        function show(){
+          if(!tip) return;
+          tip.innerHTML = "<b>"+meta.tip.t+"</b>"+meta.tip.d;
+          var r = n.getBoundingClientRect(), wrapR = n.closest(".pipe-wrap").getBoundingClientRect();
+          var left = Math.min(Math.max(r.left - wrapR.left - 60, 0), wrapR.width - 260);
+          tip.style.left = left + "px";
+          tip.style.top = (r.top - wrapR.top - 92) + "px";
+          tip.classList.add("show");
+          if(!playing) speak(meta.tip.t + ". " + meta.tip.d);
+        }
+        function hide(){ if(tip) tip.classList.remove("show"); }
+        n.addEventListener("mouseenter", show);
+        n.addEventListener("focus", show);
+        n.addEventListener("mouseleave", hide);
+        n.addEventListener("blur", hide);
+      });
+    }
+    if(s.type === "aiscore"){
+      Array.prototype.forEach.call(sceneEl.querySelectorAll(".card[data-speak]"), function(c){
+        c.addEventListener("mouseenter", function(){ if(!playing) speak(c.getAttribute("data-speak")); });
+        c.addEventListener("focus", function(){ if(!playing) speak(c.getAttribute("data-speak")); });
+      });
+    }
+  }
+
+  function renderChapterList(){
+    chlistEl.innerHTML = scenes.map(function(s, idx){
+      return '<button class="chitem" data-i="'+idx+'"><b>'+String(idx+1).padStart(2,"0")+' · '+s.title+'</b><span>'+s.kicker.split(" · ")[1]+'</span></button>';
+    }).join("");
+    Array.prototype.forEach.call(chlistEl.querySelectorAll(".chitem"), function(b){
+      b.addEventListener("click", function(){ goTo(parseInt(b.getAttribute("data-i"),10), playing); });
+    });
+  }
+
+  function syncChrome(){
+    counterEl.textContent = String(i+1).padStart(2,"0") + " / " + scenes.length;
+    marks.forEach(function(m, mi){ m.classList.toggle("done", mi <= i); });
+    Array.prototype.forEach.call(chlistEl.children, function(el, ci){ el.classList.toggle("on", ci === i); });
+    hintEl.textContent = playing ? "narrating…" : "hover diagram to explore · space to play";
+  }
+
+  function goTo(idx, keepPlaying){
+    i = Math.max(0, Math.min(scenes.length - 1, idx));
+    stopSpeak();
+    render(i);
+    syncChrome();
+    if(keepPlaying) speak(scenes[i].narrate);
+  }
+
+  function setPlaying(on){
+    playing = on;
+    playIcon.hidden = on; pauseIcon.hidden = !on;
+    playBtn.setAttribute("aria-label", on ? "Pause" : "Play");
+    syncChrome();
+    if(on) speak(scenes[i].narrate); else stopSpeak();
+  }
+
+  document.getElementById("playBtn").addEventListener("click", function(){ setPlaying(!playing); });
+  document.getElementById("prevBtn").addEventListener("click", function(){ goTo(i-1, playing); });
+  document.getElementById("nextBtn").addEventListener("click", function(){ goTo(i+1, playing); });
+  document.getElementById("muteBtn").addEventListener("click", function(){
+    muted = !muted; volIcon.hidden = muted; muteIcon.hidden = !muted;
+    if(muted) stopSpeak(); else if(playing) speak(scenes[i].narrate);
+  });
+  marks.forEach(function(m){ m.addEventListener("click", function(){ goTo(parseInt(m.getAttribute("data-i"),10), playing); }); });
+
+  document.addEventListener("keydown", function(e){
+    if(e.target && /input|textarea/i.test(e.target.tagName)) return;
+    if(e.code === "Space"){ e.preventDefault(); setPlaying(!playing); }
+    else if(e.code === "ArrowRight"){ goTo(i+1, playing); }
+    else if(e.code === "ArrowLeft"){ goTo(i-1, playing); }
+  });
+
+  renderChapterList();
+  render(0);
+  syncChrome();
+
+  try{
+    window.claude?.hot?.ready
+      ? window.claude.hot.ready(function(){})
+      : null;
+  }catch(e){}
+})();
+</script>

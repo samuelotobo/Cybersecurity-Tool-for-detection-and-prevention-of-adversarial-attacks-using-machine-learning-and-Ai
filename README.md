@@ -53,7 +53,7 @@ security_monitor/
 ├── templates/
 │   └── index.html          # Flask web dashboard template
 ├── logs/                   # Application log files
-├── reports/                # Project reports and screenshots
+├── reports/                # Project report (.docx) and the narrated walkthrough (.html)
 ├── tests/                  # Additional test scripts
 ├── cicddos2019_dataset.csv # Training dataset (~147 MB)
 ├── Phising_dataset_predict.csv

@@ -1,0 +1,463 @@
+================================================================================
+  SECURITY MONITOR — A GUIDE FOR WHOEVER PICKS THIS UP NEXT
+  (including future-you)
+================================================================================
+
+Hey — if you're reading this, you're about to either run this project for the
+first time, or you're coming back to it after a while and need to remember how
+it all fits together. This file is written for both of those people. It is
+deliberately not a terse command list. Read it once properly and you should
+never need to ask "wait, how does this thing actually work?" again.
+
+There are two other docs worth knowing about before you start:
+  - README.md               the feature list and reference documentation
+  - HOW_TO_RUN_AND_TEST.md   a short, copy-paste checklist if you just need
+                             the commands fast and already know the project
+
+This file is the long version — it explains the "why", not just the "what",
+and it also covers how to keep building on top of what's here.
+
+
+================================================================================
+  PART ONE — GETTING IT RUNNING ON YOUR MACHINE
+================================================================================
+
+--------------------------------------------------------------------------------
+1. What you need before you start
+--------------------------------------------------------------------------------
+
+  - Windows 10 or 11 is the best-supported platform (packet capture, Windows
+    Firewall blocking, and Event Log monitoring are all Windows-specific
+    features). Linux and macOS work too, just without those three features.
+
+  - Python 3.10 or newer, installed and added to your PATH.
+
+  - Git, plus Git LFS. The training dataset is a ~150 MB CSV, and it's stored
+    with Git LFS rather than as a normal file. If you skip installing LFS,
+    the CSV will look like a tiny broken text file after cloning — don't
+    panic, just install LFS and run "git lfs pull".
+
+  - On Windows, packet capture needs a driver called Npcap. Download it from
+    npcap.com. Without it, the app still opens and works, it just can't see
+    live network traffic.
+
+  - You do NOT need to be an admin to look around the app. You DO need to run
+    it as Administrator if you want the two features that touch the OS
+    directly: blocking an IP in Windows Firewall, and full-strength packet
+    capture. The app happily runs without admin rights too, it just quietly
+    disables those two things.
+
+
+--------------------------------------------------------------------------------
+2. Get the code onto your machine
+--------------------------------------------------------------------------------
+
+  Open a terminal and run:
+
+      git lfs install
+      git clone <the repository URL>
+      cd security_monitor
+      git lfs pull
+
+  That last command makes sure the real CSV data downloaded, not just the
+  small pointer file.
+
+
+--------------------------------------------------------------------------------
+3. Set up your Python environment
+--------------------------------------------------------------------------------
+
+  It's worth using a virtual environment so this project's dependencies don't
+  collide with anything else Python-related on your machine.
+
+      python -m venv .venv
+      .venv\Scripts\activate
+      pip install -r requirements.txt
+
+  (On Linux or macOS, activate with "source .venv/bin/activate" instead.)
+
+  This will take a few minutes — PyQt6, scikit-learn, and Scapy are not tiny.
+
+
+--------------------------------------------------------------------------------
+4. Add your own API keys (optional, but a few features want them)
+--------------------------------------------------------------------------------
+
+  Copy the template:
+
+      copy .env.example .env
+
+  Then open .env in Notepad and fill in whichever of these you want to use.
+  The app runs completely fine with all of them left blank — it just skips
+  the feature that needed the key.
+
+      GROQ_API_KEY        Powers the AI email-phishing analysis. Free tier,
+                           sign up at console.groq.com. This is the primary
+                           provider — fast and free.
+
+      GEMINI_API_KEY       A fallback for the same email analysis feature, in
+                           case Groq is down or you're out of quota.
+
+      ABUSEIPDB_API_KEY    Lets the app check whether an attacker's IP is
+                           already known to be malicious. Free tier at
+                           abuseipdb.com, 1000 checks a day.
+
+      GATEWAY_IP           Your router's IP address (often 192.168.1.1 or
+                           192.168.0.1). Used so the ARP-spoofing detector
+                           knows which device is your gateway, and can flag
+                           a MAC-address change on it as critical instead of
+                           just "high".
+
+  A WORD OF CAUTION: never commit your real .env file to git, and never let
+  it get bundled into a packaged build by accident. This actually happened
+  once during development — the PyInstaller spec file had a line that copied
+  the real .env straight into the built .exe, which meant real API keys were
+  sitting inside a file that got uploaded to a public GitHub Release. That
+  line has since been removed from desktop_app.spec, but if you ever add new
+  files to be bundled into the packaged build, double-check you're not
+  accidentally including .env — only .env.example should ever ship.
+
+  If you inherited this project and are not sure whether old keys were ever
+  exposed like that, the safe move is to regenerate all of them from
+  scratch. It costs nothing and takes two minutes per key.
+
+
+--------------------------------------------------------------------------------
+5. Run it
+--------------------------------------------------------------------------------
+
+  There are three different ways to run this project. Pick whichever fits:
+
+  OPTION A — the desktop app, from source (what you'll use while developing)
+
+      python desktop_app.py
+
+  Right-click your terminal and "Run as administrator" first if you want
+  live packet capture and firewall IP-blocking to actually work.
+
+  OPTION B — the packaged .exe (what an end user without Python would run)
+
+  If someone already built it, you'll find it at:
+
+      C:\Builds\SecurityMonitor\dist\SecurityMonitor\SecurityMonitor.exe
+
+  Just double-click it. See Part One, Section 7 below for how to build it
+  yourself.
+
+  OPTION C — headless, as a web dashboard
+
+      python main_app.py
+
+  This starts a Flask server on port 8080. Open http://127.0.0.1:8080 in a
+  browser, or from another device on the same network, http://<this-pc's-ip>:8080.
+  Handy for checking on things from your phone.
+
+
+--------------------------------------------------------------------------------
+6. Test that everything actually works
+--------------------------------------------------------------------------------
+
+  The automated test suite (no admin rights, no live network, no GUI window):
+
+      pytest -v
+
+  A safe, simulated smoke test that exercises every single detector with
+  fake-but-realistic in-memory events — nothing real is sent anywhere:
+
+      python demo_test.py
+      python demo_test.py --fast       (skips the slower ML checks)
+
+  A full GUI smoke test that opens the app and pokes at all twelve tabs:
+
+      python test_desktop_app.py
+
+  If you want to see the app react to something without real attack traffic,
+  open the app itself and go to the "Test & Analyse" tab — every one of the
+  twenty detectors has a one-click "simulate this" button that fires a
+  realistic fake alert straight into the live dashboard, so you can see
+  exactly what a SYN flood, an ARP hijack, or a brute-force attempt actually
+  looks like on screen.
+
+
+--------------------------------------------------------------------------------
+7. Build a standalone .exe
+--------------------------------------------------------------------------------
+
+      python build.py --zip
+
+  This builds outside the project folder, into C:\Builds\SecurityMonitor,
+  specifically to dodge a OneDrive file-locking issue that happens if you
+  build inside a folder that's syncing. It also zips the result for sharing.
+  A full build takes a few minutes — PyInstaller has to trace and bundle
+  every dependency.
+
+  After building, remember: the .env file is NOT included on purpose (see
+  the warning in section 4). If you want to hand someone a build that's
+  ready to run immediately without them setting up their own keys, that's
+  a manual, deliberate step, not something the build script should ever do
+  automatically.
+
+
+================================================================================
+  PART TWO — HOW THE PROJECT IS ACTUALLY PUT TOGETHER
+================================================================================
+
+--------------------------------------------------------------------------------
+The one-paragraph mental model
+--------------------------------------------------------------------------------
+
+  Packets come in off the network card. They get grouped into "flows" (a
+  flow is just: this source, talking to that destination, over some span of
+  time). Every flow gets scored three different ways at once — a simple
+  rule engine, a pair of machine-learning models, and a per-IP behavior
+  tracker. Those three opinions get combined into one final verdict: SAFE,
+  SUSPICIOUS, or ATTACK. That verdict shows up in the GUI, gets logged, and
+  if it's bad enough and you're running as admin, can trigger an automatic
+  Windows Firewall block. That's the whole system. Everything else is detail
+  on top of that loop.
+
+
+--------------------------------------------------------------------------------
+A tour of the important files
+--------------------------------------------------------------------------------
+
+  desktop_app.py        The whole PyQt6 desktop GUI. This is a big file —
+                         it holds the main window plus all twelve tab
+                         classes (DashboardTab, TrafficTab, AlertsTab,
+                         SystemMonitorTab, BlockedIPsTab, GeoMapTab,
+                         FileScannerTab, ToolsTab, MLAnalysisTab,
+                         AdaptiveTrainingTab, AdversarialTab, SettingsTab).
+                         The live packet-capture loop and the verdict-fusion
+                         logic both live in here too.
+
+  main_app.py            The Flask version of the same brain, for the web
+                         dashboard / headless / mobile-companion use case.
+                         Its own copy of the packet-processing loop lives
+                         here — see the note below about keeping these two
+                         in sync.
+
+  config.py               Central settings. Reads your .env file and turns
+                         it into Python constants everything else imports.
+                         If you're adding a new tunable number anywhere in
+                         the project, it almost certainly belongs here.
+
+  detectors/               One file per detection capability. This is where
+                         you'll spend most of your time if you're extending
+                         the project. Current roster:
+
+      ddos.py             The rule engine plus the Random Forest DDoS
+                          classifier wrapper.
+      anomaly.py           The Isolation Forest anomaly detector.
+      flow_tracker.py       Turns a stream of packets into flow-level
+                          features (duration, byte counts, TCP flags,
+                          inter-arrival times — the same 19 features
+                          CICFlowMeter computes, because the training
+                          dataset, CICDDoS2019, uses that schema).
+      ip_tracker.py         Per-IP behavioral heuristics over a sliding
+                          time window — SYN/ACK ratio, connection rate,
+                          port spread, sustained-attack streaks.
+      fusion.py             Combines the three layers above into one
+                          verdict, AND holds the "ML corroboration gate" —
+                          read the story on this below, it's important.
+      arp_monitor.py         ARP cache poisoning / gateway MAC hijacking /
+                          ARP floods.
+      dns_monitor.py         DNS tunneling, fast-flux, C2 beaconing, risky
+                          TLDs.
+      brute_force.py         SSH/RDP/FTP/SMB brute force, credential
+                          stuffing, password spraying.
+      tls_inspector.py        TLS ClientHello / JA3 fingerprinting — spots
+                          weak ciphers and known-malware fingerprints.
+      threat_intel.py         AbuseIPDB reputation lookups, with caching.
+      event_log.py            Reads the Windows Security/System event log
+                          for failed logins, new accounts, cleared logs,
+                          etc.
+      fim.py                   File Integrity Monitoring — SHA-256
+                          baselines, alerts on create/modify/delete.
+      ueba.py                   User and Entity Behavior Analytics —
+                          off-hours logins, logins from unfamiliar
+                          machines.
+      vuln_scanner.py           A socket-based port scanner with banner
+                          grabbing.
+      geo_mapper.py             IP geolocation for the map view.
+      ip_blocker.py             Talks to the Windows Firewall to actually
+                          block an IP, with an automatic expiry (TTL).
+      email_phishing.py         Sends email content to Groq or Gemini for
+                          AI-based phishing analysis, with a keyword-based
+                          fallback if no API key is set.
+      url_phishing.py            A separate ML classifier trained just on
+                          URL features.
+      cookie.py                  Flags suspicious cookie behavior.
+      adversarial.py              The evasion-attack engine and the
+                          composite "AI Security Score".
+      adaptive_trainer.py          Online retraining pipeline, with model
+                          version history so you can roll back.
+
+  train_model.py           Trains the DDoS Random Forest and the anomaly
+                         Isolation Forest from cicddos2019_dataset.csv.
+                         You don't need to run this day to day — trained
+                         models are already committed to the repo — but
+                         you'll want it if you change the feature set or
+                         want to retrain on new data.
+
+  rules_config.json        The rule engine's thresholds, in one editable
+                         file — port-scan limits, flood thresholds, custom
+                         rules like "flag any packet over 1500 bytes."
+
+  build.py / desktop_app.spec   The packaging pipeline (PyInstaller under
+                         the hood). If you add a new file the app needs at
+                         runtime (a new model file, a new config file), it
+                         needs to be listed in desktop_app.spec's "datas"
+                         section or it won't be in the packaged .exe.
+
+  tests/                    Automated pytest tests. tests/test_fusion.py
+                         is a good one to read first — it tests the
+                         corroboration gate described below.
+
+
+--------------------------------------------------------------------------------
+The story of the ML corroboration gate (read this before you touch fusion.py)
+--------------------------------------------------------------------------------
+
+  Here's something worth knowing, because it'll save you from redoing work
+  that's already been done: the Random Forest and Isolation Forest models
+  were trained on CICDDoS2019, a lab-generated dataset. When the app was
+  pointed at real, ordinary home-network traffic and measured directly, the
+  ML layer alone flagged almost every real flow as an attack. Not because
+  the model is bad — it just never saw what normal traffic on a real home
+  network actually looks like.
+
+  The fix wasn't to retrain the model (that's a much bigger job and doesn't
+  fully solve it). Instead, detectors/fusion.py adds a "corroboration gate":
+  a single ML-flagged flow doesn't count for anything on its own. The ML and
+  anomaly layers are only trusted once a burst of flagged flows — the
+  measured real-world benign peak was 29 flagged flows in 10 seconds to one
+  destination — hits a threshold (currently 60) aimed at one host. A real
+  DDoS produces far more than that; ordinary browsing doesn't come close.
+  Rule-based and heuristic detections (SYN floods, port scans, ARP spoofing,
+  and so on) are never gated — those are reliable on their own and stay
+  instant.
+
+  If you ever plan to retrain the model on more realistic data, this gate
+  can probably be relaxed or removed at that point. Until then, leave it in
+  place — it's the difference between a genuinely usable app and one that
+  cries wolf on every YouTube video you watch.
+
+
+--------------------------------------------------------------------------------
+The GUI and the web dashboard are two faces of one brain
+--------------------------------------------------------------------------------
+
+  desktop_app.py and main_app.py both implement their own packet-processing
+  loop and verdict fusion, because they're two independent entry points
+  (one is a PyQt6 event loop, the other is a Flask server). They both import
+  the shared fusion logic from detectors/fusion.py, so if you're changing
+  how verdicts are decided, that's the one place to change — just make sure
+  you test both entry points afterward, since they wire the gate up
+  independently.
+
+
+================================================================================
+  PART THREE — IF YOU WANT TO KEEP BUILDING ON THIS
+================================================================================
+
+--------------------------------------------------------------------------------
+Adding a brand new detector
+--------------------------------------------------------------------------------
+
+  1. Create detectors/your_thing.py. Look at arp_monitor.py or
+     dns_monitor.py as a template — they're small and self-contained.
+  2. Give it a process_packet(pkt) method (or process an already-computed
+     flow feature dict, if it needs ML-layer data) and an on_alert callback
+     it calls when something's wrong. Follow the same alert dict shape the
+     others use (rule_name, severity, source_ip, message, timestamp,
+     category) so it slots into the existing GUI and log format for free.
+  3. Instantiate it in both desktop_app.py's packet loop and main_app.py's,
+     and call its process method alongside the existing detectors.
+  4. Add a simulated example for it to desktop_app.py's Test & Analyse
+     panel (search for "_DEMO_NET" or "_DEMO_ADV") so people can see it fire
+     without needing a real attack.
+  5. Write a test for it, following the pattern in tests/test_fusion.py or
+     the detector tests inside demo_test.py.
+
+
+--------------------------------------------------------------------------------
+Adding a new tab to the desktop GUI
+--------------------------------------------------------------------------------
+
+  Look at one of the smaller tab classes — BlockedIPsTab or GeoMapTab are
+  good starting points, they're focused and not too long. Copy the shape:
+  a QWidget subclass with its own layout, wired up to whatever signal or
+  data source it needs. Then add it to the sidebar navigation list and the
+  main window's tab-switching logic (search for where the other tab classes
+  get registered).
+
+
+--------------------------------------------------------------------------------
+Retraining or improving the ML model
+--------------------------------------------------------------------------------
+
+  python train_model.py reads cicddos2019_dataset.csv and produces
+  ddos_detector_model.joblib and anomaly_model.joblib. If you retrain, also:
+
+    - re-run pytest, since a couple of tests check the model actually loads
+      and produces sane predictions
+    - reconsider whether the corroboration gate in fusion.py still needs to
+      be as strict — that number was tuned against the OLD model's
+      real-world false-positive rate
+    - update model_metrics.json if you want the ML Analysis tab's displayed
+      numbers to reflect the new model
+
+
+--------------------------------------------------------------------------------
+Ideas for where this could go next
+--------------------------------------------------------------------------------
+
+  - A real attacker/victim test on an isolated network, to validate
+    detection against genuine attack traffic instead of simulated events.
+    This was attempted with two VirtualBox VMs during development and
+    hit a wall: the host only had about 7 GB of RAM, and two Windows 11
+    VMs running at once caused real, repeatable freezes. If you have more
+    RAM to work with, or access to a second physical machine on the same
+    network, this is worth finishing — it's the one form of testing this
+    project hasn't fully done yet.
+  - Code-sign the packaged .exe, so it stops showing "Unknown publisher"
+    in the UAC and firewall prompts.
+  - Retrain the DDoS/anomaly models on a mix of the existing lab dataset
+    and real captured home-network traffic, which could let the
+    corroboration gate be relaxed or removed entirely.
+  - Read GROQ_MODEL from .env with a code fallback instead of a hardcoded
+    default in config.py (already partway there — worth finishing so a
+    future Groq model deprecation is a one-line .env edit, not a redeploy).
+
+
+--------------------------------------------------------------------------------
+Two things that bit us before, worth knowing before you go near them
+--------------------------------------------------------------------------------
+
+  1. Groq deprecates models without much warning. This project once broke
+     silently (falling back to a much dumber keyword scan) because Groq
+     retired the model config.py had hardcoded. If AI email analysis
+     suddenly stops giving useful answers, check GROQ_MODEL in config.py
+     against Groq's current model list before assuming your API key broke.
+
+  2. Never let desktop_app.spec bundle the real .env file. See Part One,
+     Section 4 above — this already happened once.
+
+
+================================================================================
+  PART FOUR — WHERE TO GO FOR MORE
+================================================================================
+
+  README.md                    Full feature list and reference docs.
+  HOW_TO_RUN_AND_TEST.md        The short version of Part One, if you just
+                              need the commands.
+  PROJECT_REPORT.md             The full academic-style project report.
+  reports/project_walkthrough.html   A narrated, voice-over walkthrough of
+                              the whole architecture — open it in any
+                              browser, click Play, and listen. Good for a
+                              quick refresher or for showing someone else
+                              what this project actually does.
+
+  That's everything. Good luck, and have fun with it.
+
+================================================================================
