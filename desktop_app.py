@@ -834,12 +834,6 @@ class SnifferThread(QThread):
             tls_d = None
 
         try:
-            from detectors.geo_mapper import GeoMapper
-            geo_m = GeoMapper(on_alert=self.alert_signal.emit)
-        except Exception:
-            geo_m = None
-
-        try:
             from detectors.ip_blocker import IPBlocker
             auto_blocker = IPBlocker(on_event=self.alert_signal.emit)
             auto_blocker.start()
@@ -3975,7 +3969,7 @@ class ToolsTab(QWidget):
 
     def _tt_worker_builtin(self):
         try:
-            from detectors.adversarial import ATTACK_PROFILES, BENIGN_PROFILE
+            from detectors.adversarial import ATTACK_PROFILES
             import config
             from detectors.ddos import DDosDetector
             det = DDosDetector(config.MODEL_FILENAME, config.RULES_CONFIG)
