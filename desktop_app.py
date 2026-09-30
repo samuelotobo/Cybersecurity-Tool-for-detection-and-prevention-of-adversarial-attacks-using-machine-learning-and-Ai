@@ -5913,7 +5913,10 @@ class MainWindow(QMainWindow):
         QApplication.instance().setStyleSheet(
             _build_qss(self._settings.get("appearance", "accent", default="#4f8ef7"))
         )
-        self._setup_tray()
+        # isSystemTrayAvailable() is unreliable if checked immediately at startup
+        # on Windows (it can report False before the shell's tray plugin has
+        # finished registering) -- deferring this one tick fixes that.
+        QTimer.singleShot(300, self._setup_tray)
         self._start_sniffer()
         self._start_host_monitors()
 
@@ -6355,7 +6358,11 @@ class MainWindow(QMainWindow):
         return QIcon(px)
 
     def _setup_tray(self):
-        if not QSystemTrayIcon.isSystemTrayAvailable():
+        # Windows always has a notification area; isSystemTrayAvailable() has
+        # a history of false negatives here, and a missed tray icon silently
+        # disables "hide on close" for the rest of the session -- so we only
+        # skip setup on the rare platform that's actually missing the API.
+        if not hasattr(QSystemTrayIcon, "isSystemTrayAvailable"):
             return
         icon_path = ROOT / "ddos.ico"
         icon = QIcon(str(icon_path)) if icon_path.exists() else self._make_tray_icon()
