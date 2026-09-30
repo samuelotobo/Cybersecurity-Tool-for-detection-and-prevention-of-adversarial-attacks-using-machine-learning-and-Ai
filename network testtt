@@ -2,8 +2,6 @@ $target = "10.101.186.36"
 1..200 | ForEach-Object {
     $client = New-Object Net.Sockets.TcpClient
     $conn = $client.BeginConnect($target, $_, $null, $null)
-    if ($conn.AsyncWaitHandle.WaitOne(200)) {
-        try { $client.EndConnect($conn); "Port $_ OPEN" } catch {}
-    }
+    $conn.AsyncWaitHandle.WaitOne(50) | Out-Null
     $client.Close()
 }
