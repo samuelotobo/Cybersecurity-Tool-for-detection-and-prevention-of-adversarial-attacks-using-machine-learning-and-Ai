@@ -1987,6 +1987,11 @@ class AlertsTab(QWidget):
             ctx = {}
             def risk_tags(_): return []
 
+        from utils.netinfo import direction_of
+        _src_ip = a.get("source_ip", "")
+        _dst_ip = a.get("destination_ip", "")
+        _dir_label, _dir_col = direction_of(_src_ip, _dst_ip)
+
         sev    = (a.get("severity") or "low").lower()
         card   = QFrame(); card.setObjectName(SEV_FRAME.get(sev, "card2"))
         cl     = QVBoxLayout(card); cl.setContentsMargins(14, 12, 14, 12); cl.setSpacing(8)
@@ -2009,6 +2014,9 @@ class AlertsTab(QWidget):
         top.addWidget(rule_lbl, 1)
         top.addWidget(_make_badge(sev.upper(), sev_col))
         cl.addLayout(top)
+
+        if _src_ip:
+            cl.addWidget(_make_badge(_dir_label, _dir_col))
 
         # Category label
         if ctx.get("category_label"):
@@ -2074,10 +2082,11 @@ class AlertsTab(QWidget):
 
         # ── Technical packet details ───────────────────────────────────────
         pkt_parts = []
-        src_ip    = a.get("source_ip", "—")
         ts        = a.get("timestamp", "")
-        if src_ip and src_ip != "—":
-            pkt_parts.append(f"Source: {src_ip}")
+        if _src_ip:
+            pkt_parts.append(f"Source: {_src_ip}")
+        if _dst_ip:
+            pkt_parts.append(f"Destination: {_dst_ip}")
         if a.get("dst_port"):
             pkt_parts.append(f"Port: {a['dst_port']}")
         if a.get("protocol"):
