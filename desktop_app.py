@@ -10,6 +10,16 @@ Build:  pyinstaller desktop_app.spec
 Needs:  pip install PyQt6
 """
 
+import os
+
+# Must be set before Qt/WebEngine load their platform backends. Works around
+# GPU-driver crashes (observed on this host: a broken AMD driver DLL taking
+# down unrelated system processes with the same fault, not just this app) by
+# steering Qt and the WebEngine/Chromium subprocess away from hardware
+# rendering entirely.
+os.environ.setdefault("QT_OPENGL", "software")
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
+
 import ctypes
 import ipaddress
 import json
@@ -108,9 +118,16 @@ IS_ADMIN = _is_admin()
 def _apply_dark_titlebar(hwnd: int) -> None:
     """Make the native Windows title bar dark (Windows 11 / 10 v20H1+)."""
     try:
-        ctypes.windll.dwmapi.DwmSetWindowAttribute(
-            hwnd, 20, ctypes.byref(ctypes.c_int(1)), 4
-        )
+        set_attr = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        # hwnd is pointer-sized (8 bytes on 64-bit Windows) -- without explicit
+        # argtypes, ctypes can mis-marshal it as a 32-bit int, corrupting the
+        # stack on the call. That's undefined behavior: it can run for a long
+        # time without visibly failing, then crash inside an unrelated DLL
+        # (observed here as a hard crash inside Qt6Core.dll on every launch).
+        set_attr.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32]
+        set_attr.restype  = ctypes.c_long
+        value = ctypes.c_int(1)
+        set_attr(ctypes.c_void_p(hwnd), 20, ctypes.byref(value), ctypes.sizeof(value))
     except Exception:
         pass
 
@@ -2129,14 +2146,14 @@ class AlertsTab(QWidget):
 
         meta = QHBoxLayout(); meta.setSpacing(8)
 
-        if src_ip and src_ip not in ("—", "localhost", "local"):
+        if _src_ip and _src_ip not in ("—", "localhost", "local"):
             blk = QPushButton("🔒  Block IP"); blk.setObjectName("dangerBtn")
             blk.setFixedHeight(28)
             if not IS_ADMIN:
                 blk.setToolTip("Needs admin — right-click app → Run as administrator")
                 blk.setEnabled(False)
             else:
-                blk.clicked.connect(lambda _, ip=src_ip, r=a.get("rule_name",""):
+                blk.clicked.connect(lambda _, ip=_src_ip, r=a.get("rule_name",""):
                                      self.block_requested.emit(ip, r))
             meta.addWidget(blk)
 
