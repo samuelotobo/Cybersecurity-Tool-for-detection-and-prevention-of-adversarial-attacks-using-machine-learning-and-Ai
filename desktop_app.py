@@ -2478,6 +2478,8 @@ class FIMThread(QThread):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class BlockedIPsTab(QWidget):
+    blocked_changed = pyqtSignal()   # fires after any block/unblock so the live sniffer can resync
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build()
@@ -2684,6 +2686,7 @@ class BlockedIPsTab(QWidget):
             self._ip_input.clear()
             self._reason_input.clear()
             self._set_status(f"Blocked {ip} via Windows Firewall.", "#34d399")
+            self.blocked_changed.emit()
         else:
             self._set_status(msg, "#f87171")
 
@@ -2706,6 +2709,7 @@ class BlockedIPsTab(QWidget):
             self.refresh()
             self._ip_input.clear()
             self._set_status(f"Unblocked {ip} — firewall rule removed.", "#34d399")
+            self.blocked_changed.emit()
         else:
             self._set_status(msg, "#f87171")
 
@@ -2737,6 +2741,7 @@ class BlockedIPsTab(QWidget):
             )
         else:
             self._set_status(f"All {count} IP(s) unblocked.", "#34d399")
+        self.blocked_changed.emit()
 
     def _set_status(self, msg: str, color: str = "#34d399") -> None:
         self._panel_status.setText(msg)
@@ -6016,6 +6021,8 @@ class MainWindow(QMainWindow):
 
         # Blocked IPs
         self._blocked_tab = BlockedIPsTab()
+        self._blocked_tab.blocked_changed.connect(
+            lambda: self._sniffer.refresh_blocked() if self._sniffer else None)
         self._add_tab("blocked",  "Blocked IPs",       self._blocked_tab,  sl, "🔒", "#fb923c")
 
         # File Scanner
