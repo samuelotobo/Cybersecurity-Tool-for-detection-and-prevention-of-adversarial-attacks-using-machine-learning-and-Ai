@@ -230,6 +230,8 @@ def _validate_ip(ip: str) -> bool:
 
 
 def _firewall_block(ip: str) -> tuple[bool, str]:
+    """Block an IP in both directions -- packets to AND from it -- so no
+    communication with it is possible at all until explicitly unblocked."""
     if not IS_ADMIN:
         return False, "Administrator rights required.  Right-click the app → Run as administrator."
     if not _validate_ip(ip):
@@ -242,7 +244,14 @@ def _firewall_block(ip: str) -> tuple[bool, str]:
              "protocol=any", "enable=yes"],
             check=True, capture_output=True, timeout=10,
         )
-        return True, f"Blocked {ip} via Windows Firewall."
+        subprocess.run(
+            ["netsh", "advfirewall", "firewall", "add", "rule",
+             f"name=SecurityMonitor_Block_{ip}_out",
+             "dir=out", "action=block", f"remoteip={ip}",
+             "protocol=any", "enable=yes"],
+            check=True, capture_output=True, timeout=10,
+        )
+        return True, f"Blocked {ip} (inbound + outbound) via Windows Firewall."
     except Exception as e:
         return False, f"Firewall rule failed: {e}"
 
@@ -252,15 +261,21 @@ def _firewall_unblock(ip: str) -> tuple[bool, str]:
         return False, "Administrator rights required."
     if not _validate_ip(ip):
         return False, f"Invalid IP address: {ip!r}"
-    try:
-        subprocess.run(
-            ["netsh", "advfirewall", "firewall", "delete", "rule",
-             f"name=SecurityMonitor_Block_{ip}"],
-            check=True, capture_output=True, timeout=10,
-        )
+    ok_any = False
+    last_err = ""
+    for suffix in ("", "_out"):
+        try:
+            subprocess.run(
+                ["netsh", "advfirewall", "firewall", "delete", "rule",
+                 f"name=SecurityMonitor_Block_{ip}{suffix}"],
+                check=True, capture_output=True, timeout=10,
+            )
+            ok_any = True
+        except Exception as e:
+            last_err = str(e)
+    if ok_any:
         return True, f"Unblocked {ip}."
-    except Exception as e:
-        return False, f"Unblock failed: {e}"
+    return False, f"Unblock failed: {last_err}"
 
 
 def _humanize(a: dict) -> str:
