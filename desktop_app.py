@@ -3438,6 +3438,312 @@ def _scan_exts():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ── Network Devices tab ───────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NetworkDevicesTab(QWidget):
+    """Discover every device on the local subnet (same technique a router's
+    'connected devices' page uses), inspect one on request, and locally
+    control its connectivity -- firewall block (this PC only) or ARP
+    disconnect (network-wide, for devices you own/are authorised to test)."""
+
+    alert_signal   = pyqtSignal(dict)    # routed up to MainWindow
+    blocked_changed = pyqtSignal()       # so the live sniffer + Blocked IPs tab resync
+
+    _scan_done_sig    = pyqtSignal(list)
+    _enrich_done_sig  = pyqtSignal(int, str, str)   # row, hostname, vendor
+    _status_sig       = pyqtSignal(str)
+    _vuln_done_sig    = pyqtSignal(str, dict)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._devices: list = []
+        self._scanner = None
+        self._registry = None
+        self._scanning = False
+
+        self._scan_done_sig.connect(self._on_scan_done)
+        self._enrich_done_sig.connect(self._on_enrich_done)
+        self._status_sig.connect(self._set_status)
+        self._vuln_done_sig.connect(self._on_vuln_done)
+
+        self._build()
+
+    # ── Build ────────────────────────────────────────────────────────────────
+
+    def _build(self):
+        root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
+
+        self._scan_btn = QPushButton("🔄  Scan Network")
+        self._scan_btn.setObjectName("primaryBtn")
+        self._scan_btn.setFixedHeight(30)
+        self._scan_btn.clicked.connect(self._start_scan)
+        root.addWidget(_page_header("📶", "Network Devices",
+            "Every device currently on your local network, with per-device info and control",
+            actions=[self._scan_btn]))
+
+        inner = QWidget(); inner.setStyleSheet("background: #0b0d1e;")
+        il = QVBoxLayout(inner); il.setContentsMargins(20, 14, 20, 14); il.setSpacing(10)
+        root.addWidget(inner, 1)
+
+        self._status_lbl = _lbl("Click “Scan Network” to discover devices.",
+                                 "color:#8fa3c0; font-size:11px;")
+        il.addWidget(self._status_lbl)
+
+        self._tbl = QTableWidget()
+        self._tbl.setColumnCount(7)
+        self._tbl.setHorizontalHeaderLabels(
+            ["IP Address", "MAC Address", "Hostname", "Vendor", "Role", "Status", "Last Seen"])
+        self._tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._tbl.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        for i in (0, 1, 4, 5, 6):
+            self._tbl.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        self._tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._tbl.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._tbl.verticalHeader().setVisible(False)
+        self._tbl.itemSelectionChanged.connect(self._on_selection_changed)
+        il.addWidget(self._tbl, 1)
+
+        # ── Per-device action panel ─────────────────────────────────────────
+        panel = QFrame(); panel.setObjectName("card2")
+        pl = QVBoxLayout(panel); pl.setContentsMargins(14, 12, 14, 12); pl.setSpacing(8)
+        self._sel_lbl = _lbl("Select a device above to see actions.",
+                              "font-size:12px; font-weight:700; color:#dde6f0;")
+        pl.addWidget(self._sel_lbl)
+
+        btn_row = QHBoxLayout(); btn_row.setSpacing(8)
+        self._info_btn  = QPushButton("ℹ  Get Info");       self._info_btn.setObjectName("secondaryBtn")
+        self._scanp_btn = QPushButton("🔍  Scan Ports");     self._scanp_btn.setObjectName("secondaryBtn")
+        self._block_btn = QPushButton("🔒  Block (this PC)"); self._block_btn.setObjectName("dangerBtn")
+        self._disc_btn  = QPushButton("⛔  Disconnect (ARP)"); self._disc_btn.setObjectName("dangerBtn")
+        for b in (self._info_btn, self._scanp_btn, self._block_btn, self._disc_btn):
+            b.setFixedHeight(30); b.setEnabled(False)
+            btn_row.addWidget(b)
+        btn_row.addStretch()
+        pl.addLayout(btn_row)
+
+        if not IS_ADMIN:
+            for b in (self._block_btn, self._disc_btn):
+                b.setToolTip("Needs administrator rights — right-click app → Run as administrator")
+
+        self._info_btn.clicked.connect(self._get_info_selected)
+        self._scanp_btn.clicked.connect(self._scan_ports_selected)
+        self._block_btn.clicked.connect(self._toggle_block_selected)
+        self._disc_btn.clicked.connect(self._toggle_disconnect_selected)
+
+        self._action_status = _lbl("", "font-size:11px; color:#34d399;")
+        pl.addWidget(self._action_status)
+        il.addWidget(panel)
+
+    # ── Scan ─────────────────────────────────────────────────────────────────
+
+    def _start_scan(self):
+        if self._scanning:
+            return
+        from detectors.network_devices import NetworkDeviceScanner
+        import config
+        if not self._scanner:
+            self._scanner = NetworkDeviceScanner(gateway_ip=getattr(config, "GATEWAY_IP", ""))
+        if not self._registry:
+            from detectors.network_devices import DeviceControlRegistry
+            self._registry = DeviceControlRegistry(on_event=self.alert_signal.emit)
+
+        self._scanning = True
+        self._scan_btn.setEnabled(False)
+        self._status_sig.emit("Scanning…")
+        threading.Thread(target=self._bg_scan, daemon=True, name="DeviceScan").start()
+
+    def _bg_scan(self):
+        try:
+            devices = self._scanner.scan(on_progress=self._status_sig.emit)
+        except Exception as e:
+            devices = []
+            self._status_sig.emit(f"Scan failed: {e}")
+        self._scan_done_sig.emit(devices)
+
+    def _on_scan_done(self, devices: list):
+        self._scanning = False
+        self._scan_btn.setEnabled(True)
+        self._devices = devices
+        self._tbl.setRowCount(0)
+        for d in devices:
+            self._add_device_row(d)
+        if devices:
+            self._status_sig.emit(f"{len(devices)} device(s) found on your network.")
+
+    def _add_device_row(self, d) -> None:
+        r = self._tbl.rowCount()
+        self._tbl.insertRow(r)
+        role_col  = "#4f8ef7" if d.is_self else "#fbbf24" if d.is_gateway else "#8fa3c0"
+        status    = "Disconnected" if d.disconnected else "Blocked" if d.blocked else ""
+        status_col = "#f87171" if (d.disconnected or d.blocked) else "#445068"
+        values = [d.ip, d.mac, d.hostname or "—", d.vendor or "—", d.role, status, d.last_seen]
+        colors = [None, None, None, None, role_col, status_col, None]
+        for c, (val, col) in enumerate(zip(values, colors)):
+            item = QTableWidgetItem(val)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if col:
+                item.setForeground(QColor(col))
+            self._tbl.setItem(r, c, item)
+
+    # ── Selection / per-device actions ─────────────────────────────────────
+
+    def _selected_device(self):
+        rows = self._tbl.selectionModel().selectedRows()
+        if not rows or rows[0].row() >= len(self._devices):
+            return None
+        return self._devices[rows[0].row()]
+
+    def _on_selection_changed(self):
+        d = self._selected_device()
+        enabled = d is not None and not d.is_self
+        for b in (self._info_btn, self._scanp_btn):
+            b.setEnabled(d is not None)
+        for b in (self._block_btn, self._disc_btn):
+            b.setEnabled(enabled and IS_ADMIN)
+        if d is None:
+            self._sel_lbl.setText("Select a device above to see actions.")
+            return
+        label = f"{d.ip}" + (f"  ({d.role})" if d.role else "")
+        self._sel_lbl.setText(label)
+        self._block_btn.setText("🔓  Unblock" if d.blocked else "🔒  Block (this PC)")
+        self._disc_btn.setText("🔌  Reconnect" if d.disconnected else "⛔  Disconnect (ARP)")
+
+    def _get_info_selected(self):
+        d = self._selected_device()
+        if not d or not self._scanner:
+            return
+        row = self._devices.index(d)
+        self._action_status.setText(f"Looking up {d.ip}…")
+        threading.Thread(target=self._bg_enrich, args=(d, row), daemon=True).start()
+
+    def _bg_enrich(self, d, row: int):
+        try:
+            self._scanner.enrich(d)
+            self._enrich_done_sig.emit(row, d.hostname, d.vendor)
+        except Exception as e:
+            self._status_sig.emit(f"Lookup failed: {e}")
+
+    def _on_enrich_done(self, row: int, hostname: str, vendor: str):
+        if row >= len(self._devices):
+            return
+        self._devices[row].hostname = hostname
+        self._devices[row].vendor   = vendor
+        self._tbl.setItem(row, 2, QTableWidgetItem(hostname or "— (no reverse DNS)"))
+        self._tbl.setItem(row, 3, QTableWidgetItem(vendor or "— (unknown vendor)"))
+        self._action_status.setText("Info updated.")
+
+    def _scan_ports_selected(self):
+        d = self._selected_device()
+        if not d:
+            return
+        self._action_status.setText(f"Scanning common ports on {d.ip}…")
+        from detectors.vuln_scanner import VulnScanner
+        scanner = VulnScanner(
+            on_progress=lambda m: self._status_sig.emit(m),
+            on_done=lambda r: self._vuln_done_sig.emit(d.ip, r),
+        )
+        scanner.scan_async(d.ip)
+
+    def _on_vuln_done(self, ip: str, results: dict):
+        hosts = results.get("hosts", {})
+        findings = hosts.get(ip, [])
+        if not findings:
+            self._action_status.setText(f"{ip}: no common ports open.")
+            return
+        lines = [f"{f['port']}/{f['service']} ({f['risk']})" for f in findings]
+        QMessageBox.information(self, f"Open ports — {ip}",
+            f"{len(findings)} open port(s) on {ip}:\n\n" + "\n".join(lines))
+        self._action_status.setText(f"{ip}: {len(findings)} open port(s) — see dialog.")
+
+    # ── Block (this PC only) ────────────────────────────────────────────────
+
+    def _toggle_block_selected(self):
+        d = self._selected_device()
+        if not d:
+            return
+        if d.blocked:
+            ok, msg = _firewall_unblock(d.ip)
+            if ok:
+                data = _load_blocked(); data.pop(d.ip, None); _save_blocked(data)
+                d.blocked = False
+        else:
+            ok, msg = _firewall_block(d.ip)
+            if ok:
+                data = _load_blocked()
+                data[d.ip] = {"blocked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                              "reason": "Blocked from Network Devices tab", "auto": False}
+                _save_blocked(data)
+                d.blocked = True
+        self._action_status.setText(msg)
+        if ok:
+            self._refresh_selected_row(d)
+            self.blocked_changed.emit()
+
+    # ── ARP disconnect (network-wide) ───────────────────────────────────────
+
+    def _toggle_disconnect_selected(self):
+        d = self._selected_device()
+        if not d or not self._registry:
+            return
+        if d.disconnected:
+            ok, msg = self._registry.reconnect(d.ip)
+            if ok:
+                d.disconnected = False
+            self._action_status.setText(msg)
+            self._refresh_selected_row(d)
+            return
+
+        gateway = next((x for x in self._devices if x.is_gateway), None)
+        if not gateway:
+            self._action_status.setText(
+                "Can't find the gateway's MAC — re-scan the network first, "
+                "or set GATEWAY_IP in .env.")
+            return
+
+        reply = QMessageBox.question(
+            self, "Disconnect device",
+            f"Cut {d.ip} off from the ENTIRE network (not just this PC)?\n\n"
+            "This uses ARP spoofing to break its route to the router. Only do this "
+            "to a device you own or are authorised to test — reconnect any time "
+            "from this tab.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        ok, msg = self._registry.disconnect(d.ip, d.mac, gateway.ip, gateway.mac)
+        if ok:
+            d.disconnected = True
+        self._action_status.setText(msg)
+        self._refresh_selected_row(d)
+
+    def _refresh_selected_row(self, d) -> None:
+        if d not in self._devices:
+            return
+        row = self._devices.index(d)
+        status = "Disconnected" if d.disconnected else "Blocked" if d.blocked else ""
+        item = QTableWidgetItem(status)
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        if status:
+            item.setForeground(QColor("#f87171"))
+        self._tbl.setItem(row, 5, item)
+        self._on_selection_changed()
+
+    # ── Misc ─────────────────────────────────────────────────────────────────
+
+    def _set_status(self, msg: str):
+        self._status_lbl.setText(msg)
+
+    def reconnect_all(self) -> None:
+        """Called on app shutdown so a crash/close never leaves a device
+        permanently cut off."""
+        if self._registry:
+            self._registry.reconnect_all()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ── Tools tab ─────────────────────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -6025,6 +6331,14 @@ class MainWindow(QMainWindow):
             lambda: self._sniffer.refresh_blocked() if self._sniffer else None)
         self._add_tab("blocked",  "Blocked IPs",       self._blocked_tab,  sl, "🔒", "#fb923c")
 
+        # Network Devices
+        self._devices_tab = NetworkDevicesTab()
+        self._devices_tab.alert_signal.connect(self._on_alert)
+        self._devices_tab.blocked_changed.connect(
+            lambda: (self._sniffer.refresh_blocked() if self._sniffer else None,
+                     self._blocked_tab.refresh()))
+        self._add_tab("devices", "Network Devices", self._devices_tab, sl, "📶", "#4ade80")
+
         # File Scanner
         self._file_scanner_tab = FileScannerTab()
         self._file_scanner_tab.alert_signal.connect(self._on_file_scan_alert)
@@ -6452,6 +6766,10 @@ class MainWindow(QMainWindow):
             self._file_scanner_tab.stop_monitors()
         except Exception:
             pass
+        try:
+            self._devices_tab.reconnect_all()
+        except Exception:
+            pass
         QApplication.quit()
 
     # ── Window events ──────────────────────────────────────────────────────
@@ -6481,6 +6799,10 @@ class MainWindow(QMainWindow):
                 self._fim_thread.stop()
             try:
                 self._file_scanner_tab.stop_monitors()
+            except Exception:
+                pass
+            try:
+                self._devices_tab.reconnect_all()
             except Exception:
                 pass
             e.accept()
