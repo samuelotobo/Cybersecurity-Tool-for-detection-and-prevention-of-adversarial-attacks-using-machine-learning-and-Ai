@@ -22,6 +22,12 @@ A professional cybersecurity desktop application that provides real-time network
 - Supports single IP, hostname, and CIDR ranges (up to /24)
 - Highlights high-risk open ports
 
+### Network Devices
+- Active ARP sweep discovers every device on your local subnet (like a router's "connected devices" page) — auto-caps oversized school/corporate netmasks down to a practical /24
+- Per-device, on-request hostname (reverse DNS) and vendor (MAC OUI) lookup, plus one-click port scanning
+- **Block** — cuts a device off from this PC only, via the same bidirectional Windows Firewall rule as the Blocked IPs tab
+- **Disconnect (ARP)** — cuts a device off from the whole network by poisoning its route to the gateway; reversible any time from the same tab, and auto-restored on app shutdown. Only use on devices you own or are authorised to test
+
 ### Desktop App
 - System tray integration with toast notifications for critical alerts
 - Windows Firewall IP blocking (requires Administrator)
@@ -49,7 +55,8 @@ security_monitor/
 │   ├── threat_intel.py     # AbuseIPDB reputation checks
 │   ├── event_log.py        # Windows Event Log monitor
 │   ├── fim.py              # File Integrity Monitor
-│   └── vuln_scanner.py     # Network vulnerability scanner
+│   ├── vuln_scanner.py     # Network vulnerability scanner
+│   └── network_devices.py  # LAN device discovery, firewall/ARP disconnect
 ├── templates/
 │   └── index.html          # Flask web dashboard template
 ├── logs/                   # Application log files
