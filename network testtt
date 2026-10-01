@@ -1,0 +1,8 @@
+ping 192.168.31.70
+1..50 | ForEach-Object {
+    $client = New-Object Net.Sockets.TcpClient
+    $conn = $client.BeginConnect("192.168.31.70", $_, $null, $null)
+    $conn.AsyncWaitHandle.WaitOne(200) | Out-Null
+    $client.Close()
+}
+Test-NetConnection 192.168.31.70 -Port 8080
